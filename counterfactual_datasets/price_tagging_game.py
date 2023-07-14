@@ -49,22 +49,31 @@ def pricing_tag_game_config_sampler(amount, lower_bound, bound_width):
     return lower_bound_sample, upper_bound_sample, amount_sample
 
 
-def entity_tracking_example_sampler(tokenizer, sample_index, num_ops=3):
+def entity_tracking_example_sampler(tokenizer, num_samples, num_ops=3):
     with open(f"./box_datasets/no_instructions/{num_ops}/train.jsonl") as f:
         data = [json.loads(line) for line in f]
 
-    # sample_index = random.choice(range(0, len(data)))
-    assert sample_index < len(data)
-    prompt = " ".join(data[sample_index]["sentence"].split(" ")[:-1])
-    label = data[sample_index]["sentence"].split(" ")[-1][:-1]
-    label = tokenizer.encode(label)[1]  # 0th index will be space
+    assert num_samples <= len(data)
+    prompts, labels = [], []
 
-    input_ids = tokenizer(prompt, return_tensors="pt").input_ids[0]
-    output_ids = (torch.ones(input_ids.shape[0]) * -100).long().tolist()
-    output_ids[-1] = label
-    input_ids = input_ids.tolist()
+    for i in range(num_samples):
+        prompts.append(" ".join(data[i]["sentence"].split(" ")[:-1]))
+        label = data[i]["sentence"].split(" ")[-1][:-1]
+        # 0th index will be BOS token for llama-like tokenizer
+        labels.append(tokenizer.encode(label)[1])
 
-    return input_ids, output_ids
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
+    output_ids[
+        torch.arange(len(last_token_indices)), last_token_indices
+    ] = torch.tensor(labels)
+
+    input_ids = input_tokens["input_ids"].tolist()
+    last_token_indices = last_token_indices.tolist()
+    output_ids = output_ids.tolist()
+
+    return input_ids, last_token_indices, output_ids
 
 
 def pricing_tag_game_example_sampler(
@@ -144,24 +153,29 @@ def factual_sampler(
     bound_width=None,
 ):
     all_input_ids = []
+    all_last_token_indices = []
     all_output_ids = []  # this one does not have input ids, etc..
-    for sample_index in range(max_n_training_examples):
-        if "pricing_tag" in game:
-            input_ids, output_ids = pricing_tag_game_example_sampler(
-                tokenizer, amount, lower_bound, bound_width
-            )
-        elif game == "entity_tracking":
-            input_ids, output_ids = entity_tracking_example_sampler(
-                tokenizer, sample_index, num_ops=3
-            )
-            if len(input_ids) != 23:
-                continue
-        elif game == "continent_retrieval":
-            pass
-        all_input_ids += [input_ids]
-        all_output_ids += [output_ids]
 
-    return all_input_ids, all_output_ids
+    if game == "entity_tracking":
+        (
+            all_input_ids,
+            all_last_token_indices,
+            all_output_ids,
+        ) = entity_tracking_example_sampler(
+            tokenizer, max_n_training_examples, num_ops=3
+        )
+
+    # for sample_index in range(max_n_training_examples):
+    #     if "pricing_tag" in game:
+    #         input_ids, output_ids = pricing_tag_game_example_sampler(
+    #             tokenizer, amount, lower_bound, bound_width
+    #         )
+    #     elif game == "continent_retrieval":
+    #         pass
+    #     all_input_ids += [input_ids]
+    #     all_output_ids += [output_ids]
+
+    return all_input_ids, all_last_token_indices, all_output_ids
 
 
 def sample_with_region(region, lower_bound_sample, upper_bound_sample):
@@ -175,20 +189,48 @@ def sample_with_region(region, lower_bound_sample, upper_bound_sample):
     return amount_sample
 
 
-def box_name_alignment_example_sampler(tokenizer, sample_index, ops_index, num_ops=3):
-    base_input_ids, base_output_ids = entity_tracking_example_sampler(
-        tokenizer, sample_index, num_ops
-    )
-    source_input_ids, source_output_ids = entity_tracking_example_sampler(
-        tokenizer, sample_index + ops_index, num_ops
+def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
+
+    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
+        tokenizer, num_samples, num_ops
     )
 
-    ctf_label = source_output_ids
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+    all_intervention_ids = []
+
+    for i in range(0, len(input_ids), num_ops):
+        for j in range(num_ops):
+            all_base_input_ids += [input_ids[i]]
+            all_source_input_ids += [input_ids[i + j]]
+            all_base_input_last_pos += [last_token_indices[i]]
+            all_source_input_last_pos += [last_token_indices[i + j]]
+
+            if j == 0:
+                all_ctf_output_ids += [output_ids[i]]
+            else:
+                all_ctf_output_ids += [output_ids[i + j]]
+            all_intervention_ids += [0]
+
+    # base_input_ids, base_output_ids = entity_tracking_example_sampler(
+    #     tokenizer, num_samples, num_ops
+    # )
+    # source_input_ids, source_output_ids = entity_tracking_example_sampler(
+    #     tokenizer, num_samples + ops_index, num_ops
+    # )
+
+    # ctf_label = source_output_ids
 
     return (
-        base_input_ids,
-        source_input_ids,
-        ctf_label,
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+        all_intervention_ids,
     )
 
 
@@ -292,37 +334,49 @@ def upper_bound_alignment_example_sampler(
 def name_alignment_sampler(
     tokenizer, max_n_training_examples, bound_functors, num_ops=3
 ):
-    all_base_input_ids = []
-    all_source_input_ids = []
-    all_ctf_output_ids = []
-    all_intervention_ids = []
 
-    for sample_index in range(0, max_n_training_examples, num_ops):
-        for ops_index in range(0, num_ops):
-            name_functor = random.choice(bound_functors)
-            (
-                base_input_ids,
-                source_input_ids,
-                ctf_output_ids,
-            ) = name_functor(
-                tokenizer,
-                sample_index,
-                ops_index,
-                num_ops,
-            )
+    name_functor = random.choice(bound_functors)
+    (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+        all_intervention_ids,
+    ) = name_functor(
+        tokenizer,
+        max_n_training_examples,
+        num_ops,
+    )
 
-            if len(base_input_ids) == 23 and len(source_input_ids) == 23:
-                intervention_id = 0 if name_functor == bound_functors[0] else 1
+    # for sample_index in range(0, max_n_training_examples, num_ops):
+    #     for ops_index in range(0, num_ops):
+    #         name_functor = random.choice(bound_functors)
+    #         (
+    #             base_input_ids,
+    #             source_input_ids,
+    #             ctf_output_ids,
+    #         ) = name_functor(
+    #             tokenizer,
+    #             sample_index,
+    #             ops_index,
+    #             num_ops,
+    #         )
 
-                all_base_input_ids += [base_input_ids]
-                all_source_input_ids += [source_input_ids]
+    #         # if len(base_input_ids) == 23 and len(source_input_ids) == 23:
+    #         intervention_id = 0 if name_functor == bound_functors[0] else 1
 
-                all_ctf_output_ids += [ctf_output_ids]
-                all_intervention_ids += [intervention_id]
+    #         all_base_input_ids += [base_input_ids]
+    #         all_source_input_ids += [source_input_ids]
+
+    #         all_ctf_output_ids += [ctf_output_ids]
+    #         all_intervention_ids += [intervention_id]
 
     return (
         all_base_input_ids,
+        all_base_input_last_pos,
         all_source_input_ids,
+        all_source_input_last_pos,
         all_ctf_output_ids,
         all_intervention_ids,
     )
