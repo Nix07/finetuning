@@ -190,7 +190,6 @@ def sample_with_region(region, lower_bound_sample, upper_bound_sample):
 
 
 def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
-
     input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
         tokenizer, num_samples, num_ops
     )
@@ -214,15 +213,6 @@ def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
             else:
                 all_ctf_output_ids += [output_ids[i + j]]
             all_intervention_ids += [0]
-
-    # base_input_ids, base_output_ids = entity_tracking_example_sampler(
-    #     tokenizer, num_samples, num_ops
-    # )
-    # source_input_ids, source_output_ids = entity_tracking_example_sampler(
-    #     tokenizer, num_samples + ops_index, num_ops
-    # )
-
-    # ctf_label = source_output_ids
 
     return (
         all_base_input_ids,
@@ -334,7 +324,6 @@ def upper_bound_alignment_example_sampler(
 def name_alignment_sampler(
     tokenizer, max_n_training_examples, bound_functors, num_ops=3
 ):
-
     name_functor = random.choice(bound_functors)
     (
         all_base_input_ids,
@@ -348,29 +337,6 @@ def name_alignment_sampler(
         max_n_training_examples,
         num_ops,
     )
-
-    # for sample_index in range(0, max_n_training_examples, num_ops):
-    #     for ops_index in range(0, num_ops):
-    #         name_functor = random.choice(bound_functors)
-    #         (
-    #             base_input_ids,
-    #             source_input_ids,
-    #             ctf_output_ids,
-    #         ) = name_functor(
-    #             tokenizer,
-    #             sample_index,
-    #             ops_index,
-    #             num_ops,
-    #         )
-
-    #         # if len(base_input_ids) == 23 and len(source_input_ids) == 23:
-    #         intervention_id = 0 if name_functor == bound_functors[0] else 1
-
-    #         all_base_input_ids += [base_input_ids]
-    #         all_source_input_ids += [source_input_ids]
-
-    #         all_ctf_output_ids += [ctf_output_ids]
-    #         all_intervention_ids += [intervention_id]
 
     return (
         all_base_input_ids,

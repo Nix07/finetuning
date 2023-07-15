@@ -8,8 +8,7 @@ from transformers.configuration_utils import PretrainedConfig
 class AlignableLlamaConfig(PretrainedConfig):
     model_type = "llama"
 
-    def __init__(self, das_layer=15, das_token_range=[22, 23], **kwargs):
+    def __init__(self, das_layer, das_token_range, **kwargs):
         self.das_layer = das_layer
-        self.das_token_range = das_token_range
 
         super().__init__(**kwargs)

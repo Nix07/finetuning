@@ -130,7 +130,7 @@ class AlignableLlamaModel(LlamaModel):
             self.inverse_rotate_layer = InverseRotateLayer(self.rotate_layer)
 
             # this will be replaced by a learnable parameters
-            self.intervention_boundaries = torch.tensor([1.0, 1.0], requires_grad=True)
+            self.intervention_boundaries = torch.tensor([1.0], requires_grad=True)
             self.intervention_boundaries = torch.nn.Parameter(
                 self.intervention_boundaries
             )
@@ -280,16 +280,10 @@ class AlignableLlamaModel(LlamaModel):
             hidden_states = layer_outputs[0]
 
             if self.alignment_config != None and idx == self.alignment_config["layer"]:
-                # disjoin
-                original_shape = copy.deepcopy(
-                    hidden_states.shape
-                )  # (batch, seq_len, hidden_size)
-
-                if last_token_position == None:
-                    print(source_hidden_states == None)
-
+                relative_pos = self.alignment_config["rel_pos"]
                 aligning_hidden_states = hidden_states[
-                    torch.arange(len(last_token_position)), last_token_position
+                    torch.arange(len(last_token_position)),
+                    last_token_position - relative_pos,
                 ]  # (batch, hidden_size)
                 rotated_hidden_states = self.rotate_layer(
                     aligning_hidden_states
@@ -299,6 +293,7 @@ class AlignableLlamaModel(LlamaModel):
                 if source_hidden_states != None:
                     # source_hidden_states (#batch, hidden_size)
                     # boundary learning
+
                     intervention_boundaries = torch.clamp(
                         self.intervention_boundaries, 1e-3, 1
                     )
@@ -308,27 +303,14 @@ class AlignableLlamaModel(LlamaModel):
                     first_boundary_mask = sigmoid_boundary_sigmoid(
                         self.intervention_population.repeat(batch_size, 1),
                         0.0,
-                        intervention_boundaries[0] * int(self.searchable_n_embd // 2),
-                        self.temperature,
-                    )
-                    second_boundary_mask = sigmoid_boundary_sigmoid(
-                        self.intervention_population.repeat(batch_size, 1),
-                        intervention_boundaries[0] * int(self.searchable_n_embd // 2),
-                        2
-                        * intervention_boundaries[0]
-                        * int(self.searchable_n_embd // 2),
+                        intervention_boundaries[0] * int(self.searchable_n_embd),
                         self.temperature,
                     )
                     boundary_mask = (intervention_ids == 0).unsqueeze(
                         dim=-1
-                    ) * first_boundary_mask + (intervention_ids == 1).unsqueeze(
-                        dim=-1
-                    ) * second_boundary_mask
+                    ) * first_boundary_mask
                     boundary_mask = boundary_mask.to(rotated_hidden_states.dtype)
 
-                    # print("boundary_mask", boundary_mask.shape)
-                    # print("rotated_hidden_states", rotated_hidden_states.shape)
-                    # print("source_hidden_states", source_hidden_states.shape)
                     rotated_hidden_states = (
                         1.0 - boundary_mask
                     ) * rotated_hidden_states + boundary_mask * source_hidden_states
@@ -336,12 +318,13 @@ class AlignableLlamaModel(LlamaModel):
                 # rotate back + suture
                 reversed_hidden_states = self.inverse_rotate_layer(
                     rotated_hidden_states
-                )
+                )  # (batch, hidden_size)
 
+                # Inserting the rotated hidden states back into the hidden states
                 for bi in range(hidden_states.shape[0]):
-                    hidden_states[bi, last_token_position[bi]] = reversed_hidden_states[
-                        bi
-                    ]
+                    hidden_states[
+                        bi, last_token_position[bi] - relative_pos
+                    ] = reversed_hidden_states[bi]
 
                 if output_rotated_hidden_states_only:
                     # we early exist.

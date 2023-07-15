@@ -142,7 +142,7 @@ class Aligner(object):
         total_log_step = 0
         best_eval_acc = -1
         target_total_step = len(train_dataloader) * int(epochs)
-        temperature_start = 50.0
+        temperature_start = 25.0
         temperature_end = 0.1
         temperature_schedule = torch.linspace(
             temperature_start, temperature_end, target_total_step
@@ -182,7 +182,6 @@ class Aligner(object):
                     preds.append(outputs.logits[bi, last_token_pos])
 
                 step_accuracy = self.compute_metrics_fn(preds, labels)["accuracy"]
-                # print(f"Step accuracy: {step_accuracy}")
 
                 if self.is_master and total_step % log_step == 0:
                     if self.is_wandb:
@@ -236,9 +235,6 @@ class Aligner(object):
                                     intervention_ids=inputs["intervention_ids"],
                                     labels=inputs["labels"],
                                 )
-
-                                # eval_labels += [inputs["labels"]]
-                                # eval_preds += [outputs.logits]
 
                                 for bi, last_token_pos in enumerate(
                                     inputs["base_input_last_pos"]
