@@ -2,8 +2,8 @@ import json
 import torch
 
 
-def entity_tracking_example_sampler(tokenizer, num_samples, num_ops=3):
-    with open(f"./box_datasets/no_instructions/{num_ops}/train.jsonl") as f:
+def entity_tracking_example_sampler(tokenizer, num_samples, data_file):
+    with open(data_file) as f:
         data = [json.loads(line) for line in f]
 
     assert num_samples <= len(data)
@@ -29,9 +29,11 @@ def entity_tracking_example_sampler(tokenizer, num_samples, num_ops=3):
     return input_ids, last_token_indices, output_ids
 
 
-def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
+def box_name_alignment_example_sampler(
+    tokenizer, num_samples, data_file, num_ents_or_ops
+):
     input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
-        tokenizer, num_samples, num_ops
+        tokenizer, num_samples, data_file
     )
 
     all_base_input_ids = []
@@ -41,8 +43,10 @@ def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
     all_ctf_output_ids = []
     all_intervention_ids = []
 
-    for i in range(0, len(input_ids), num_ops):
-        for j in range(num_ops):
+    for i in range(0, num_samples, num_ents_or_ops):
+        if i + num_ents_or_ops > num_samples:
+            break
+        for j in range(num_ents_or_ops):
             all_base_input_ids += [input_ids[i]]
             all_source_input_ids += [input_ids[i + j]]
             all_base_input_last_pos += [last_token_indices[i]]
@@ -61,8 +65,8 @@ def box_name_alignment_example_sampler(tokenizer, num_samples, num_ops=3):
     )
 
 
-def name_alignment_sampler(
-    tokenizer, max_n_training_examples, bound_functors, num_ops=3
+def alignment_example_sampler(
+    tokenizer, data_size, aligner_func, data_file, num_ents_or_ops
 ):
     (
         all_base_input_ids,
@@ -71,10 +75,11 @@ def name_alignment_sampler(
         all_source_input_last_pos,
         all_ctf_output_ids,
         all_intervention_ids,
-    ) = bound_functors(
+    ) = aligner_func(
         tokenizer,
-        max_n_training_examples,
-        num_ops,
+        data_size,
+        data_file,
+        num_ents_or_ops,
     )
 
     return (
@@ -102,7 +107,7 @@ def factual_sampler(
             all_last_token_indices,
             all_output_ids,
         ) = entity_tracking_example_sampler(
-            tokenizer, max_n_training_examples, num_ops=3
+            tokenizer, max_n_training_examples, num_ents_or_ops=3
         )
 
     return all_input_ids, all_last_token_indices, all_output_ids

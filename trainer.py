@@ -129,8 +129,10 @@ class Aligner(object):
                 os.path.join(output_dir, "train_log.txt"), "w", buffering=1
             )
             log_eval = open(os.path.join(output_dir, "eval_log.txt"), "w", buffering=1)
+            test_eval = open(os.path.join(output_dir, "test_log.txt"), "w", buffering=1)
             print("step,loss,accuracy", file=log_train)
             print("step,accuracy", file=log_eval)
+            print("accuracy", file=test_eval)
             log_train.close()
             log_eval.close()
 
@@ -327,13 +329,11 @@ class Aligner(object):
                 wandb.log({"test/accuracy": eval_metrics["accuracy"]}, step=total_step)
                 wandb.finish()
             else:
-                log_eval = open(
-                    os.path.join(output_dir, "eval_log.txt"), "a", buffering=1
+                test_eval = open(
+                    os.path.join(output_dir, "test_log.txt"), "a", buffering=1
                 )
-                print(
-                    "{},{}".format(total_step, eval_metrics["accuracy"]), file=log_eval
-                )
-                log_eval.close()
+                print("{}".format(eval_metrics["accuracy"]), file=test_eval)
+                test_eval.close()
         ###############################
 
         if self.is_master:
