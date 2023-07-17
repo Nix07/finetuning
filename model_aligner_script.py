@@ -46,6 +46,7 @@ def load_data(
     data_size,
     aligner_func,
     data_file,
+    architecture,
     num_ents_or_ops,
     batch_size,
     object_file,
@@ -56,6 +57,7 @@ def load_data(
         aligner_func,
         data_file,
         num_ents_or_ops,
+        architecture,
         object_file=object_file,
     )
 
@@ -288,12 +290,19 @@ def main(args):
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # Load data
+    data_sampler = (
+        box_name_alignment_example_sampler
+        if args.causal_variable == "query_box_identity"
+        else object_alignment_example_sampler
+    )
+    architecture = AutoConfig.from_pretrained(args.model_name_or_path).architectures[0]
     train_dataloader, eval_dataloader, test_dataloader = load_data(
         tokenizer,
         args.data_size,
-        object_alignment_example_sampler,
+        data_sampler,
         args.data_file,
         args.num_entities_or_ops,
+        architecture,
         args.batch_size,
         args.object_file,
     )
@@ -396,6 +405,12 @@ def parse_args():
         type=str,
         default="./box_datasets/objects_with_bnc_frequency.csv",
         help="Path to object file",
+    )
+    parser.add_argument(
+        "--causal_variable",
+        type=str,
+        default="query_box_identity",
+        help="Causal variable to align",
     )
 
     return parser.parse_args()

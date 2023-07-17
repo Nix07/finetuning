@@ -4,33 +4,6 @@ import torch
 import pandas as pd
 
 
-def entity_tracking_example_sampler(tokenizer, num_samples, data_file):
-    with open(data_file) as f:
-        data = [json.loads(line) for line in f]
-
-    assert num_samples <= len(data)
-    prompts, labels = [], []
-
-    for i in range(num_samples):
-        prompts.append(" ".join(data[i]["sentence"].split(" ")[:-1]))
-        label = data[i]["sentence"].split(" ")[-1][:-1]
-        # 0th index will be BOS token for llama-like tokenizer
-        labels.append(tokenizer.encode(label)[1])
-
-    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
-    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
-    output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
-    output_ids[
-        torch.arange(len(last_token_indices)), last_token_indices
-    ] = torch.tensor(labels)
-
-    input_ids = input_tokens["input_ids"].tolist()
-    last_token_indices = last_token_indices.tolist()
-    output_ids = output_ids.tolist()
-
-    return input_ids, last_token_indices, output_ids
-
-
 def object_alignment_example_generator(tokenizer, num_samples, data_file, object_file):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
@@ -107,14 +80,6 @@ def object_alignment_example_sampler(
             all_ctf_output_ids += [output_ids[i + j]]
             all_intervention_ids += [0]
 
-    # for i in range(num_samples):
-    #     try:
-    #         print(
-    #             f"{tokenizer.decode(all_base_input_ids[i])}: {tokenizer.decode(output_ids[i][all_base_input_last_pos[i]])}"
-    #         )
-    #     except:
-    #         print(f"Error for index {i}: {output_ids[i][all_base_input_last_pos[i]]}")
-
     return (
         all_base_input_ids,
         all_base_input_last_pos,
@@ -125,11 +90,48 @@ def object_alignment_example_sampler(
     )
 
 
+def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    prompts, labels = [], []
+
+    for i in range(num_samples):
+        prompts.append(" ".join(data[i]["sentence"].split(" ")[:-1]))
+        label = data[i]["sentence"].split(" ")[-1][:-1]
+        # 0th index will be BOS token for llama-like tokenizer
+        if architecture in [
+            "AlignableLlamaForCausalLM",
+            "LLaMAForCausalLM",
+            "LlamaForCausalLM",
+            "LlaMAForCausalLM",
+        ]:
+            labels.append(tokenizer.encode(label)[1])
+        elif architecture == "GPT2LMHeadModel":
+            labels.append(tokenizer.encode(label)[0])
+        else:
+            raise ValueError(f"Unknown architecture {architecture}")
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
+    output_ids[
+        torch.arange(len(last_token_indices)), last_token_indices
+    ] = torch.tensor(labels)
+
+    input_ids = input_tokens["input_ids"].tolist()
+    last_token_indices = last_token_indices.tolist()
+    output_ids = output_ids.tolist()
+
+    return input_ids, last_token_indices, output_ids
+
+
 def box_name_alignment_example_sampler(
-    tokenizer, num_samples, data_file, num_ents_or_ops
+    tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops
 ):
     input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
-        tokenizer, num_samples, data_file
+        tokenizer, num_samples, data_file, architecture
     )
 
     all_base_input_ids = []
@@ -166,6 +168,7 @@ def alignment_example_sampler(
     data_size,
     aligner_func,
     data_file,
+    architecture,
     num_ents_or_ops=None,
     object_file=None,
 ):
@@ -180,6 +183,7 @@ def alignment_example_sampler(
         tokenizer,
         data_size,
         data_file,
+        architecture,
         object_file,
         num_ents_or_ops,
     )
