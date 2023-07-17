@@ -5,7 +5,6 @@ results*/
 logs
 notebooks/figures/
 *.tsv
-*.csv
 *.out
 *results/
 *.sh
