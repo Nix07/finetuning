@@ -15,9 +15,9 @@ from models.configuration_alignable_model import AlignableLlamaConfig
 from counterfactual_datasets.entity_tracking import (
     box_name_alignment_example_sampler,
     alignment_example_sampler,
+    object_alignment_example_sampler,
 )
 from trainer import Aligner, CACHE_DIR
-import counterfactual_datasets.price_tagging_game as price_tagging_game
 from torch.utils.data import DataLoader, SequentialSampler
 from models.modelings_alignable import AutoAlignableModel
 from tqdm import tqdm
@@ -42,7 +42,13 @@ set_seed(42)
 
 # %%
 def load_data(
-    tokenizer, data_size, aligner_func, data_file, num_ents_or_ops, batch_size
+    tokenizer,
+    data_size,
+    aligner_func,
+    data_file,
+    num_ents_or_ops,
+    batch_size,
+    object_file,
 ):
     raw_data = alignment_example_sampler(
         tokenizer,
@@ -50,10 +56,15 @@ def load_data(
         aligner_func,
         data_file,
         num_ents_or_ops,
+        object_file=object_file,
     )
 
     train_size = int(0.8 * len(raw_data[0]))
     eval_size = int(0.1 * len(raw_data[0]))
+
+    print("Train size: ", train_size)
+    print("Eval size: ", eval_size)
+    print("Test size: ", len(raw_data[0]) - train_size - eval_size)
 
     raw_train = (
         raw_data[0][:train_size],
@@ -253,6 +264,7 @@ def plot_alignment_acc(model_name_or_path, seed, aligning_layers, layers_interva
     df = df.iloc[::-1]
     df = df.iloc[:, ::-1]
 
+    fig, ax = plt.subplots(figsize=(10, 10))
     ax = sns.heatmap(df, annot=True, fmt=".2f", cmap="rocket_r")
     ax.set_title("IIA for Query Box Identity Variable")
     ax.set_xlabel("Tokens")
@@ -279,10 +291,11 @@ def main(args):
     train_dataloader, eval_dataloader, test_dataloader = load_data(
         tokenizer,
         args.data_size,
-        box_name_alignment_example_sampler,
+        object_alignment_example_sampler,
         args.data_file,
         args.num_entities_or_ops,
         args.batch_size,
+        args.object_file,
     )
 
     # Aligning model
@@ -377,6 +390,12 @@ def parse_args():
         type=int,
         default=1,
         help="Interval between layers to align",
+    )
+    parser.add_argument(
+        "--object_file",
+        type=str,
+        default="./box_datasets/objects_with_bnc_frequency.csv",
+        help="Path to object file",
     )
 
     return parser.parse_args()
