@@ -57,7 +57,7 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
 
 
 def object_alignment_example_sampler(
-    tokenizer, num_samples, data_file, object_file, num_ents_or_ops=None
+    tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops=None
 ):
     input_ids, last_token_indices, output_ids = object_alignment_example_generator(
         tokenizer, num_samples // 2, data_file, object_file
@@ -202,7 +202,9 @@ def factual_sampler(
     tokenizer,
     max_n_training_examples,
     data_file,
+    achitecture,
     object_file,
+    num_ents_or_ops,
     game,
 ):
     all_input_ids = []
@@ -215,7 +217,10 @@ def factual_sampler(
             all_last_token_indices,
             all_output_ids,
         ) = object_alignment_example_generator(
-            tokenizer, max_n_training_examples, data_file, object_file
+            tokenizer,
+            max_n_training_examples,
+            data_file,
+            object_file,
         )
 
     return all_input_ids, all_last_token_indices, all_output_ids

@@ -242,12 +242,18 @@ def align_model(
 
 
 # %%
-def plot_alignment_acc(model_name_or_path, seed, aligning_layers, layers_interval):
+def plot_alignment_acc(
+    seed,
+    aligning_layers,
+    layers_interval,
+    output_dir,
+    image_name,
+):
     df = pd.DataFrame(columns=["layer", "rel_pos", "accuracy"])
     for rel_pos in range(0, 4):
         for layer in range(0, aligning_layers, layers_interval):
             with open(
-                f"results_tmp/seed.{seed}.rel.{rel_pos}.layer.{layer}/test_log.txt",
+                f"{output_dir}/seed.{seed}.rel.{rel_pos}.layer.{layer}/test_log.txt",
                 "r",
             ) as file:
                 data = file.readlines()
@@ -275,7 +281,7 @@ def plot_alignment_acc(model_name_or_path, seed, aligning_layers, layers_interva
     ax.set_yticklabels(
         [f"Layer {i}" for i in range(aligning_layers, 0, -layers_interval)], rotation=0
     )
-    plt.savefig(f"query-box-var.png")
+    plt.savefig(f"{image_name}")
     # plt.show()
 
 
@@ -324,10 +330,11 @@ def main(args):
 
     # Plot alignment accuracy
     plot_alignment_acc(
-        args.model_name_or_path,
         args.seed,
         args.aligning_layers,
         args.layers_interval,
+        args.output_dir,
+        args.image_name,
     )
 
 
@@ -411,6 +418,12 @@ def parse_args():
         type=str,
         default="query_box_identity",
         help="Causal variable to align",
+    )
+    parser.add_argument(
+        "--image_name",
+        type=str,
+        default="alignment_acc.png",
+        help="Name of the image to save",
     )
 
     return parser.parse_args()
