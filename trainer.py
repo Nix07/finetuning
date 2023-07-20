@@ -130,7 +130,10 @@ class Aligner(object):
             )
             log_eval = open(os.path.join(output_dir, "eval_log.txt"), "w", buffering=1)
             test_eval = open(os.path.join(output_dir, "test_log.txt"), "w", buffering=1)
-            print("step,loss,accuracy", file=log_train)
+            print(
+                "step,loss,accuracy,temperature,boundary_end",
+                file=log_train,
+            )
             print("step,accuracy", file=log_eval)
             print("accuracy", file=test_eval)
             log_train.close()
@@ -208,8 +211,17 @@ class Aligner(object):
                         log_train = open(
                             os.path.join(output_dir, "train_log.txt"), "a", buffering=1
                         )
+                        intervention_boundaries = torch.clamp(
+                            self.model.model.intervention_boundaries, 1e-3, 1
+                        )
                         print(
-                            "{},{},{}".format(total_step, loss.item(), step_accuracy),
+                            "{},{},{},{},{}".format(
+                                total_step,
+                                loss.item(),
+                                step_accuracy,
+                                self.model.model.temperature.data,
+                                intervention_boundaries.data[0],
+                            ),
                             file=log_train,
                         )
                         log_train.close()

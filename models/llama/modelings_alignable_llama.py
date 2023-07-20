@@ -135,7 +135,7 @@ class AlignableLlamaModel(LlamaModel):
                 self.intervention_boundaries
             )
             self.temperature = nn.Parameter(
-                torch.tensor(50.0)
+                torch.tensor(25.0)
             )  # Define temperature as a parameter
             self.intervention_population = nn.Parameter(
                 torch.arange(0, self.searchable_n_embd), requires_grad=False
@@ -297,12 +297,12 @@ class AlignableLlamaModel(LlamaModel):
                     intervention_boundaries = torch.clamp(
                         self.intervention_boundaries, 1e-3, 1
                     )
-                    intervention_boundaries = torch.cumsum(
-                        intervention_boundaries, dim=0
-                    )
+                    # intervention_boundaries = torch.cumsum(
+                    #     intervention_boundaries, dim=0
+                    # )
                     first_boundary_mask = sigmoid_boundary_sigmoid(
                         self.intervention_population.repeat(batch_size, 1),
-                        0.0,
+                        0,
                         intervention_boundaries[0] * int(self.searchable_n_embd),
                         self.temperature,
                     )
@@ -478,9 +478,9 @@ class AlignableLlamaForCausalLM(LlamaForCausalLM):
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
 
-            # boundary loss - make it smaller
-            if self.model.alignment_config != None:
-                boundary_loss = 1.0 * self.model.intervention_boundaries.sum()
+            # boundary range (#dimensions) - make it smaller
+            if self.model.alignment_config is not None:
+                boundary_loss = 5.0 * self.model.intervention_boundaries[0]
                 loss += boundary_loss
 
         if not return_dict:

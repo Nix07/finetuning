@@ -155,8 +155,8 @@ def align_model(
     seed,
     output_dir,
 ):
-    for rel_pos in range(0, 4):
-        for layer in range(0, aligning_layers, layers_interval):
+    for rel_pos in range(0, 1):
+        for layer in range(0, 32, layers_interval):
             print(f"Starting traing for layer: {layer}")
             alignment_config = {
                 "layer": layer,
@@ -231,10 +231,10 @@ def align_model(
                 optimizer,
                 scheduler,
                 log_step=train_log_steps,
-                valid_steps=batch_size,
+                valid_steps=20,
                 output_dir=output_file_path,
                 epochs=num_train_epochs,
-                gradient_accumulation_steps=4,
+                gradient_accumulation_steps=1,
             )
 
             torch.cuda.empty_cache()
@@ -253,7 +253,7 @@ def plot_alignment_acc(
     for rel_pos in range(0, 4):
         for layer in range(0, aligning_layers, layers_interval):
             with open(
-                f"{output_dir}/seed.{seed}.rel.{rel_pos}.layer.{layer}/test_log.txt",
+                f"{output_dir}seed.{seed}.rel.{rel_pos}.layer.{layer}/test_log.txt",
                 "r",
             ) as file:
                 data = file.readlines()
@@ -329,13 +329,13 @@ def main(args):
     )
 
     # Plot alignment accuracy
-    plot_alignment_acc(
-        args.seed,
-        args.aligning_layers,
-        args.layers_interval,
-        args.output_dir,
-        args.image_name,
-    )
+    # plot_alignment_acc(
+    #     args.seed,
+    #     args.aligning_layers,
+    #     args.layers_interval,
+    #     args.output_dir,
+    #     args.image_name,
+    # )
 
 
 # %%
