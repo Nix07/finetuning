@@ -12,11 +12,7 @@ import pandas as pd
 from datasets import Dataset
 import os, random, argparse, sys, torch
 from models.configuration_alignable_model import AlignableLlamaConfig
-from counterfactual_datasets.entity_tracking import (
-    box_name_alignment_example_sampler,
-    alignment_example_sampler,
-    object_alignment_example_sampler,
-)
+from counterfactual_datasets.entity_tracking import *
 from trainer import Aligner, CACHE_DIR
 from torch.utils.data import DataLoader, SequentialSampler
 from models.modelings_alignable import AutoAlignableModel
@@ -155,8 +151,8 @@ def align_model(
     seed,
     output_dir,
 ):
-    for rel_pos in range(0, 1):
-        for layer in range(0, 32, layers_interval):
+    for rel_pos in range(0, 4):
+        for layer in range(0, aligning_layers, layers_interval):
             print(f"Starting traing for layer: {layer}")
             alignment_config = {
                 "layer": layer,
@@ -297,7 +293,7 @@ def main(args):
 
     # Load data
     data_sampler = (
-        box_name_alignment_example_sampler
+        modified_box_name_alignment_example_sampler
         if args.causal_variable == "query_box_identity"
         else object_alignment_example_sampler
     )
@@ -329,13 +325,13 @@ def main(args):
     )
 
     # Plot alignment accuracy
-    # plot_alignment_acc(
-    #     args.seed,
-    #     args.aligning_layers,
-    #     args.layers_interval,
-    #     args.output_dir,
-    #     args.image_name,
-    # )
+    plot_alignment_acc(
+        args.seed,
+        args.aligning_layers,
+        args.layers_interval,
+        args.output_dir,
+        args.image_name,
+    )
 
 
 # %%
@@ -386,7 +382,7 @@ def parse_args():
     parser.add_argument(
         "--train_log_steps",
         type=int,
-        default=10,
+        default=5,
         help="Log step for training",
     )
     parser.add_argument(

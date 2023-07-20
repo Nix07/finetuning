@@ -127,6 +127,46 @@ def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architect
     return input_ids, last_token_indices, output_ids
 
 
+def modified_box_name_alignment_example_sampler(
+    tokenizer, num_samples, data_file, object_file, num_ents_or_ops, architecture
+):
+    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file, architecture
+    )
+
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+    all_intervention_ids = []
+
+    for i in range(0, num_samples, num_ents_or_ops):
+        if i + num_ents_or_ops > num_samples:
+            break
+        for j in range(num_ents_or_ops):
+            all_base_input_ids += [input_ids[i + j]]
+            all_base_input_last_pos += [last_token_indices[i + j]]
+
+            random_source_index = random.choice(
+                range(0, num_samples, num_ents_or_ops)
+            ) + ((j + 1) % num_ents_or_ops)
+            all_source_input_ids += [input_ids[random_source_index]]
+            all_source_input_last_pos += [last_token_indices[random_source_index]]
+
+            all_ctf_output_ids += [output_ids[i + (j + 1) % num_ents_or_ops]]
+            all_intervention_ids += [0]
+
+    return (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+        all_intervention_ids,
+    )
+
+
 def box_name_alignment_example_sampler(
     tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops
 ):
@@ -168,9 +208,9 @@ def alignment_example_sampler(
     data_size,
     aligner_func,
     data_file,
-    architecture,
     num_ents_or_ops=None,
     object_file=None,
+    architecture=None,
 ):
     (
         all_base_input_ids,
@@ -180,12 +220,7 @@ def alignment_example_sampler(
         all_ctf_output_ids,
         all_intervention_ids,
     ) = aligner_func(
-        tokenizer,
-        data_size,
-        data_file,
-        architecture,
-        object_file,
-        num_ents_or_ops,
+        tokenizer, data_size, data_file, object_file, num_ents_or_ops, architecture
     )
 
     return (
