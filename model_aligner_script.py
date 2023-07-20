@@ -53,7 +53,7 @@ def load_data(
         aligner_func,
         data_file,
         num_ents_or_ops,
-        architecture,
+        architecture=architecture,
         object_file=object_file,
     )
 
@@ -303,8 +303,8 @@ def main(args):
         args.data_size,
         data_sampler,
         args.data_file,
-        args.num_entities_or_ops,
         architecture,
+        args.num_entities_or_ops,
         args.batch_size,
         args.object_file,
     )
