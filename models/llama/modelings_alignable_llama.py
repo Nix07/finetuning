@@ -130,7 +130,7 @@ class AlignableLlamaModel(LlamaModel):
             self.inverse_rotate_layer = InverseRotateLayer(self.rotate_layer)
 
             # this will be replaced by a learnable parameters
-            self.intervention_boundaries = torch.tensor([1.0], requires_grad=True)
+            self.intervention_boundaries = torch.tensor([0.0, 1.0], requires_grad=True)
             self.intervention_boundaries = torch.nn.Parameter(
                 self.intervention_boundaries
             )
@@ -302,8 +302,8 @@ class AlignableLlamaModel(LlamaModel):
                     # )
                     first_boundary_mask = sigmoid_boundary_sigmoid(
                         self.intervention_population.repeat(batch_size, 1),
-                        0,
                         intervention_boundaries[0] * int(self.searchable_n_embd),
+                        intervention_boundaries[1] * int(self.searchable_n_embd),
                         self.temperature,
                     )
                     boundary_mask = (intervention_ids == 0).unsqueeze(
@@ -480,7 +480,8 @@ class AlignableLlamaForCausalLM(LlamaForCausalLM):
 
             # boundary range (#dimensions) - make it smaller
             if self.model.alignment_config is not None:
-                boundary_loss = 5.0 * self.model.intervention_boundaries[0]
+                boundary_range = self.model.intervention_boundaries[1] - self.model.intervention_boundaries[0]
+                boundary_loss = 5.0 * boundary_range
                 loss += boundary_loss
 
         if not return_dict:

@@ -151,7 +151,7 @@ def align_model(
     seed,
     output_dir,
 ):
-    for rel_pos in range(0, 4):
+    for rel_pos in range(0, 1):
         for layer in range(0, aligning_layers, layers_interval):
             print(f"Starting traing for layer: {layer}")
             alignment_config = {
@@ -325,13 +325,13 @@ def main(args):
     )
 
     # Plot alignment accuracy
-    plot_alignment_acc(
-        args.seed,
-        args.aligning_layers,
-        args.layers_interval,
-        args.output_dir,
-        args.image_name,
-    )
+    # plot_alignment_acc(
+    #     args.seed,
+    #     args.aligning_layers,
+    #     args.layers_interval,
+    #     args.output_dir,
+    #     args.image_name,
+    # )
 
 
 # %%
