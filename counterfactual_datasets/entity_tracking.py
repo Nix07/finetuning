@@ -117,9 +117,7 @@ def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architect
     input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
     last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
     output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
-    output_ids[
-        torch.arange(len(last_token_indices)), last_token_indices
-    ] = torch.tensor(labels)
+    output_ids[torch.arange(len(last_token_indices)), last_token_indices] = torch.tensor(labels)
 
     input_ids = input_tokens["input_ids"].tolist()
     last_token_indices = last_token_indices.tolist()
@@ -147,8 +145,9 @@ def modified_box_name_alignment_example_sampler(
             break
         for j in range(num_ents_or_ops):
             # Randomizing the box indices in the base example
+            base_example = input_ids[i + j]
             random_box_indices = np.random.choice(
-                list(range(3, 10)), size=3, replace=False
+                list(range(num_ents_or_ops, 10)), size=num_ents_or_ops, replace=False
             )
             random_box = {
                 0: tokenizer(str(random_box_indices[0]), return_tensors="pt")
@@ -161,17 +160,10 @@ def modified_box_name_alignment_example_sampler(
                 .input_ids[0, -1]
                 .item(),
             }
-            full_stop_token = 29889
-            full_stop_token_index = input_ids[i + j].index(full_stop_token)
             for old_index, new_token in random_box.items():
-                old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[
-                    0, -1
-                ]
-                input_ids[i + j] = [
-                    new_token
-                    if (token == old_token and i < full_stop_token_index)
-                    else token
-                    for i, token in enumerate(input_ids[i + j])
+                old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[0, -1]
+                base_example = [
+                    new_token if (token == old_token) else token for token in base_example
                 ]
 
             # Inserting query box of the source in the base at random position
@@ -181,14 +173,12 @@ def modified_box_name_alignment_example_sampler(
                 .input_ids[0, -1]
                 .item()
             )
-            input_ids[i + j] = [
-                query_box_token
-                if (token == random_box[random_pos] and i < full_stop_token_index)
-                else token
-                for i, token in enumerate(input_ids[i + j])
+            base_example = [
+                query_box_token if (token == random_box[random_pos]) else token
+                for token in base_example
             ]
 
-            all_base_input_ids += [input_ids[i + j]]
+            all_base_input_ids += [base_example]
             all_base_input_last_pos += [
                 last_token_indices[i + j]
             ]  # Won't change because of randomization
@@ -196,9 +186,10 @@ def modified_box_name_alignment_example_sampler(
                 output_ids[i + random_pos]
             ]  # New output will acc. to the new position of the query box
 
-            random_source_index = random.choice(
-                range(0, num_samples, num_ents_or_ops)
-            ) + ((j + 1) % num_ents_or_ops)
+            # Choosing a random source example
+            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
+                (j + 1) % num_ents_or_ops
+            )
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 
@@ -266,9 +257,7 @@ def alignment_example_sampler(
         all_source_input_last_pos,
         all_ctf_output_ids,
         all_intervention_ids,
-    ) = aligner_func(
-        tokenizer, data_size, data_file, object_file, num_ents_or_ops, architecture
-    )
+    ) = aligner_func(tokenizer, data_size, data_file, object_file, num_ents_or_ops, architecture)
 
     return (
         all_base_input_ids,
