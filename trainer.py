@@ -131,7 +131,7 @@ class Aligner(object):
             log_eval = open(os.path.join(output_dir, "eval_log.txt"), "w", buffering=1)
             test_eval = open(os.path.join(output_dir, "test_log.txt"), "w", buffering=1)
             print(
-                "step,loss,accuracy,temperature,boundary_start,boundary_end",
+                "step,loss,accuracy,temperature,boundary_end",
                 file=log_train,
             )
             print("step,accuracy", file=log_eval)
@@ -215,13 +215,12 @@ class Aligner(object):
                             self.model.model.intervention_boundaries, 1e-3, 1
                         )
                         print(
-                            "{},{},{},{},{},{}".format(
+                            "{},{},{},{},{}".format(
                                 total_step,
                                 loss.item(),
                                 step_accuracy,
                                 self.model.model.temperature.data,
                                 intervention_boundaries.data[0],
-                                intervention_boundaries.data[1],
                             ),
                             file=log_train,
                         )
