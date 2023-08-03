@@ -6,11 +6,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from functools import partial
 from baukit import TraceDict
 from einops import rearrange, einsum
-
-# from plotly_utils import imshow
+from collections import defaultdict
+import matplotlib.pyplot as plt
+from plotly_utils import imshow, scatter
 from tqdm import tqdm
 
-# import pysvelte
+import pysvelte
 import importlib
 import analysis_utils
 from counterfactual_datasets.entity_tracking import *
@@ -27,17 +28,18 @@ model = AutoModelForCausalLM.from_pretrained(path).to(device)
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 # %%
-raw_data = box_index_aligner_examples(
+raw_data = object_alignment_example_sampler(
     tokenizer,
     num_samples=6,
     data_file="./box_datasets/no_instructions/3/train.jsonl",
+    object_file="./box_datasets/objects_with_bnc_frequency.csv",
     architecture="LLaMAForCausalLM",
     num_ents_or_ops=3,
 )
 
 # %%
 base_tokens = raw_data[0]
-base_last_token_index = raw_data[1]
+base_last_token_indices = raw_data[1]
 source_tokens = raw_data[2]
 source_last_token_indices = raw_data[3]
 correct_answer_token = raw_data[4]
@@ -88,7 +90,7 @@ def patch_activation(inputs, output, layer, head):
         n_heads=model.config.num_attention_heads,
     )
     for bi in range(batch_size):
-        input[bi, base_last_token_index[bi], head, :] = source_attn_output[layer][
+        input[bi, base_last_token_indices[bi], head, :] = source_attn_output[layer][
             bi, source_last_token_indices[bi], head, :
         ]
     input = rearrange(
@@ -127,52 +129,332 @@ for layer in tqdm(range(model.config.num_hidden_layers)):
 
             logit_value = 0
             for bi in range(batch_size):
-                logits = torch.log_softmax(output.logits[bi, base_last_token_index[bi], :], dim=-1)
-                logit_value += logits[correct_answer_token[bi][base_last_token_index[bi]]]
+                logits = torch.log_softmax(
+                    output.logits[bi, base_last_token_indices[bi], :], dim=-1
+                )
+                logit_value += logits[correct_answer_token[bi][base_last_token_indices[bi]]]
 
         logit_values[layer, head] = logit_value / batch_size
 
 # %%
 # Saving logit_values
-torch.save(logit_values, "query_box_value_logit_values.pt")
+# torch.save(logit_values, "")
 
 # %%
 # Load logit_values
 # logit_values = torch.load("logit_values.pt")
 
 # %%
-# imshow((logit_values - torch.mean(logit_values)) / torch.std(logit_values))
+imshow(
+    (logit_values - torch.mean(logit_values)) / torch.std(logit_values),
+    # title="Query Box Reference Mover Heads",
+    yaxis_title="Layer",
+    xaxis_title="Head",
+)
 
 
 # %%
-# def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True):
-#     """Computes the topk most influential components (i.e. heads) for patching."""
-#     top_indices = torch.topk(patching_scores.flatten(), k, largest=largest).indices
-
-#     # Convert the top_indices to 2D indices
-#     row_indices = top_indices // patching_scores.shape[1]
-#     col_indices = top_indices % patching_scores.shape[1]
-#     top_components = torch.stack((row_indices, col_indices), dim=1)
-#     # Get the top indices as a list of 2D indices (row, column)
-#     top_components = top_components.tolist()
-#     return top_components
+top_heads = analysis_utils.compute_topk_components(logit_values, 10, largest=True)
+# %%
+layer = 15
+attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
+# %%
+index = 3
+print(f"Layer: {layer}, Bi: {index}")
+pysvelte.AttentionMulti(
+    tokens=[tokenizer.decode(token) for token in source_tokens[index].cpu().tolist()],
+    attention=attn_scores[index].permute(1, 2, 0).cpu(),
+).show()
 
 
 # %%
-# compute_topk_components(logit_values, 10, largest=True)
+hook_point = [
+    f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)
+]
+with torch.no_grad():
+    with TraceDict(
+        model,
+        hook_point,
+        retain_input=True,
+    ) as cache:
+        _ = model(source_tokens)
+
 # %%
-# layer = 6
-# attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
+head_out_logit = torch.zeros(source_tokens.size(0))
+
+query_box_pos = [raw_data[2][bi].index(29889) + 3 for bi in range(source_tokens.size(0))]
+query_box = [raw_data[2][bi][query_box_pos[bi]] for bi in range(source_tokens.size(0))]
+
+for layer, head in top_heads:
+    hook_point = f"model.layers.{layer}.self_attn.o_proj"
+
+    all_head_out = cache[hook_point].input
+    batch_size = source_tokens.size(0)
+    d_head = model.config.hidden_size // model.config.num_attention_heads
+
+    decoder = torch.nn.Sequential(
+        model.model.layers[layer].self_attn.o_proj,
+        model.model.norm,
+        model.lm_head,
+        torch.nn.LogSoftmax(dim=-1),
+    )
+
+    start = head * d_head
+    end = (head + 1) * d_head
+
+    for bi in range(batch_size):
+        head_output = all_head_out[bi, source_last_token_indices[bi], start:end]
+        head_output = torch.concat(
+            (
+                torch.zeros(head * d_head).to(head_output.device),
+                head_output,
+                torch.zeros((model.config.num_attention_heads - head - 1) * d_head).to(
+                    head_output.device
+                ),
+            ),
+            dim=0,
+        )
+        head_unembed = decoder(head_output)
+        head_out_logit[bi] = head_unembed[query_box[bi]]
+
+    print(f"Layer: {layer}, head: {head}, Mean Box Logit: {head_out_logit.mean()}")
+
 # %%
-# index = 1
-# print(f"Layer: {layer}, Bi: {index}")
-# pysvelte.AttentionMulti(
-#     tokens=[tokenizer.decode(token) for token in source_tokens[index].cpu().tolist()],
-#     attention=attn_scores[index].permute(1, 2, 0).cpu(),
-# ).show()
+############################################
+# Implementing path patching
+############################################
+
+# Run model on clean and corrupt prompts and cache attention heads activations
+hook_points = [
+    f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)
+]
+with torch.no_grad():
+    with TraceDict(
+        model,
+        hook_points,
+        retain_input=True,
+    ) as clean_cache:
+        _ = model(base_tokens)
+
+    with TraceDict(
+        model,
+        hook_points,
+        retain_input=True,
+    ) as corrupt_cache:
+        _ = model(source_tokens)
 
 
-# # %%
+# %%
+def patching_heads(
+    inputs,
+    output,
+    layer,
+    sender_layer,
+    sender_head,
+    clean_last_token_indices,
+    corrupt_last_token_indices,
+):
+    input = inputs[0]
+    batch_size = input.size(0)
+    input = rearrange(
+        input,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+    clean_head_outputs = rearrange(
+        clean_cache[layer].input,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+    corrupt_head_outputs = rearrange(
+        corrupt_cache[layer].input,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    layer = int(layer.split(".")[2])
+    if sender_layer == layer:
+        # print(clean_head_outputs.shape, corrupt_head_outputs.shape)
+
+        for bi in range(batch_size):
+            # Patch in the output of the sender head from corrupt run
+            input[bi, clean_last_token_indices[bi], sender_head] = corrupt_head_outputs[
+                bi, corrupt_last_token_indices[bi], sender_head
+            ]
+
+        for bi in range(batch_size):
+            # Patch in the output of all the heads, except sender, in this layer from clean run
+            for head_ind in range(model.config.num_attention_heads):
+                if head_ind != sender_head:
+                    input[bi, clean_last_token_indices[bi], head_ind] = clean_head_outputs[
+                        bi, clean_last_token_indices[bi], head_ind
+                    ]
+    else:
+        for bi in range(batch_size):
+            # Patch in the output of all the heads in this layer from clean run
+            input[bi, clean_last_token_indices[bi]] = clean_head_outputs[
+                bi, clean_last_token_indices[bi]
+            ]
+
+    input = rearrange(
+        input,
+        "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    w_o = model.model.layers[layer].self_attn.o_proj.weight
+    output = einsum(
+        input, w_o, "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model"
+    )
+
+    return output
+
+
+# %%
+logit_values = torch.zeros(model.config.num_hidden_layers, model.config.num_attention_heads)
+batch_size = base_tokens.size(0)
+for layer in tqdm(range(model.config.num_hidden_layers)):
+    for head in range(model.config.num_attention_heads):
+        with torch.no_grad():
+            with TraceDict(
+                model,
+                hook_points,
+                retain_input=True,
+                edit_output=partial(
+                    patching_heads,
+                    sender_layer=layer,
+                    sender_head=head,
+                    clean_last_token_indices=base_last_token_indices,
+                    corrupt_last_token_indices=source_last_token_indices,
+                ),
+            ) as patch_cache:
+                patched_out = model(base_tokens)
+
+            logit_value = 0
+            for bi in range(batch_size):
+                logits = torch.log_softmax(
+                    patched_out.logits[bi, base_last_token_indices[bi], :], dim=-1
+                )
+                logit_value += logits[correct_answer_token[bi][base_last_token_indices[bi]]]
+
+        logit_values[layer, head] = logit_value / batch_size
+
+# %%
+imshow(
+    (logit_values - torch.mean(logit_values)) / torch.std(logit_values),
+    # title="Query Box Reference Mover Heads",
+    # yaxis_title="Layer",
+    # xaxis_title="Head",
+)
+
+# %%
+object_fetcher_heads = analysis_utils.compute_topk_components(logit_values, 30, largest=True)
+print(object_fetcher_heads)
+
+# %%
+layer = 24
+attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
+# %%
+index = 5
+print(f"Layer: {layer}, Bi: {index}")
+pysvelte.AttentionMulti(
+    tokens=[tokenizer.decode(token) for token in source_tokens[index].cpu().tolist()],
+    attention=attn_scores[index].permute(1, 2, 0).cpu(),
+).show()
+
+# %%
+# Computing average attention scores to correct object by top 5 object fetcher heads
+
+scores = defaultdict(float)
+for layer in range(model.config.num_hidden_layers):
+    attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
+
+    for head in range(model.config.num_attention_heads):        
+        for bi in range(source_tokens.size(0)):
+            correct_object = correct_answer_token[bi][base_last_token_indices[bi]]
+            correct_object_pos = source_tokens[bi].tolist().index(correct_object)
+
+            scores[(layer, head)] += attn_scores[bi, head, source_last_token_indices[bi], correct_object_pos].item()
+
+        scores[(layer, head)] /= source_tokens.size(0)
+
+# %%
+hook_point = [
+    f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)
+]
+with torch.no_grad():
+    with TraceDict(
+        model,
+        hook_point,
+        retain_input=True,
+    ) as cache:
+        _ = model(source_tokens)
+
+# %%
+# Computing the logit value of correct object written by object fetcher heads
+direct_logit_values = defaultdict(float)
+for layer in tqdm(range(model.config.num_hidden_layers)):
+    for head in range(model.config.num_attention_heads):
+        hook_point = f"model.layers.{layer}.self_attn.o_proj"
+
+        all_head_out = cache[hook_point].input
+        batch_size = source_tokens.size(0)
+        d_head = model.config.hidden_size // model.config.num_attention_heads
+
+        decoder = torch.nn.Sequential(
+            model.model.layers[layer].self_attn.o_proj,
+            model.model.norm,
+            model.lm_head,
+        )
+
+        start = head * d_head
+        end = (head + 1) * d_head
+
+        head_out_logit = torch.zeros(batch_size)
+        for bi in range(batch_size):
+            head_output = all_head_out[bi, source_last_token_indices[bi], start:end]
+            head_output = torch.concat(
+                (
+                    torch.zeros(head * d_head).to(head_output.device),
+                    head_output,
+                    torch.zeros((model.config.num_attention_heads - head - 1) * d_head).to(
+                        head_output.device
+                    ),
+                ),
+                dim=0,
+            )
+            head_unembed = decoder(head_output)
+            correct_object = correct_answer_token[bi][base_last_token_indices[bi]]
+            head_out_logit[bi] = head_unembed[correct_object]
+
+        direct_logit_values[(layer, head)] = head_out_logit.mean().item()
+
+# %%
+# Plot a scatter plot of direct logit values vs attention scores
+x = []
+y = []
+for layer in range(model.config.num_hidden_layers):
+    for head in range(model.config.num_attention_heads):
+        x.append(scores[(layer, head)])
+        y.append(direct_logit_values[(layer, head)])
+
+# scatter(x, y)
+
+plt.scatter(x, y, alpha=0.5, s=10)
+plt.xlabel("Attention Score")
+plt.ylabel("Correct Object Logit Value (log softmax)")
+plt.title("Direct Logit Value vs Attention Score")
+plt.grid(True)
+plt.xlim(0, 1)
+
+# Color the top 5 object fetcher heads
+for layer, head in object_fetcher_heads:
+    plt.scatter(scores[(layer, head)], direct_logit_values[(layer, head)], c="green", alpha=0.5)
+plt.legend(["Other Heads", "Top 30 Object Fetcher Heads"])
+plt.show()
+
+
+# %%
 # pc_sim = []
 # pc_index = 0
 # with torch.no_grad():
