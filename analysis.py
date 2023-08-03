@@ -6,9 +6,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from functools import partial
 from baukit import TraceDict
 from einops import rearrange, einsum
-from plotly_utils import imshow
+
+# from plotly_utils import imshow
 from tqdm import tqdm
-import pysvelte
+
+# import pysvelte
 import importlib
 import analysis_utils
 from counterfactual_datasets.entity_tracking import *
@@ -25,12 +27,11 @@ model = AutoModelForCausalLM.from_pretrained(path).to(device)
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 # %%
-raw_data = modified_box_name_alignment_example_sampler(
+raw_data = box_index_aligner_examples(
     tokenizer,
     num_samples=6,
     data_file="./box_datasets/no_instructions/3/train.jsonl",
-    architecture=model.config.architectures[0],
-    object_file=None,
+    architecture="LLaMAForCausalLM",
     num_ents_or_ops=3,
 )
 
@@ -133,7 +134,7 @@ for layer in tqdm(range(model.config.num_hidden_layers)):
 
 # %%
 # Saving logit_values
-torch.save(logit_values, "logit_values.pt")
+torch.save(logit_values, "query_box_value_logit_values.pt")
 
 # %%
 # Load logit_values
@@ -160,10 +161,10 @@ torch.save(logit_values, "logit_values.pt")
 # %%
 # compute_topk_components(logit_values, 10, largest=True)
 # %%
-# layer = 21
+# layer = 6
 # attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
 # %%
-# index = 4
+# index = 1
 # print(f"Layer: {layer}, Bi: {index}")
 # pysvelte.AttentionMulti(
 #     tokens=[tokenizer.decode(token) for token in source_tokens[index].cpu().tolist()],
