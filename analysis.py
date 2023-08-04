@@ -229,6 +229,7 @@ hook_points = [
     f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)
 ]
 with torch.no_grad():
+    # Step 1
     with TraceDict(
         model,
         hook_points,
@@ -256,45 +257,81 @@ def patching_heads(
 ):
     input = inputs[0]
     batch_size = input.size(0)
+
+    if "o_proj" in layer:
+        input = rearrange(
+            input,
+            "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+            n_heads=model.config.num_attention_heads,
+        )
+        clean_head_outputs = rearrange(
+            clean_cache[layer].input,
+            "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+            n_heads=model.config.num_attention_heads,
+        )
+        corrupt_head_outputs = rearrange(
+            corrupt_cache[layer].input,
+            "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+            n_heads=model.config.num_attention_heads,
+        )
+
+        layer = int(layer.split(".")[2])
+        if sender_layer == layer:
+            for bi in range(batch_size):
+                # Patch in the output of the sender head from corrupt run
+                input[bi, clean_last_token_indices[bi], sender_head] = corrupt_head_outputs[
+                    bi, corrupt_last_token_indices[bi], sender_head
+                ]
+
+            for bi in range(batch_size):
+                # Patch in the output of all the heads, except sender, in this layer from clean run
+                for head_ind in range(model.config.num_attention_heads):
+                    if head_ind != sender_head:
+                        input[bi, clean_last_token_indices[bi], head_ind] = clean_head_outputs[
+                            bi, clean_last_token_indices[bi], head_ind
+                        ]
+        else:
+            for bi in range(batch_size):
+                # Patch in the output of all the heads in this layer from clean run
+                input[bi, clean_last_token_indices[bi]] = clean_head_outputs[
+                    bi, clean_last_token_indices[bi]
+                ]
+
+        input = rearrange(
+            input,
+            "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+            n_heads=model.config.num_attention_heads,
+        )
+
+        w_o = model.model.layers[layer].self_attn.o_proj.weight
+        output = einsum(
+            input, w_o, "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model"
+        )
+
+    return output
+
+
+# %%
+def patching_receiver_heads(inputs, output, layer, patched_cache, clean_last_token_indices):
+    input = inputs[0]
+    batch_size = input.size(0)
+
     input = rearrange(
         input,
         "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
         n_heads=model.config.num_attention_heads,
     )
-    clean_head_outputs = rearrange(
-        clean_cache[layer].input,
-        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
-        n_heads=model.config.num_attention_heads,
-    )
-    corrupt_head_outputs = rearrange(
-        corrupt_cache[layer].input,
+    patched_head_outputs = rearrange(
+        patched_cache[layer].input,
         "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
         n_heads=model.config.num_attention_heads,
     )
 
-    layer = int(layer.split(".")[2])
-    if sender_layer == layer:
-        # print(clean_head_outputs.shape, corrupt_head_outputs.shape)
-
-        for bi in range(batch_size):
-            # Patch in the output of the sender head from corrupt run
-            input[bi, clean_last_token_indices[bi], sender_head] = corrupt_head_outputs[
-                bi, corrupt_last_token_indices[bi], sender_head
-            ]
-
-        for bi in range(batch_size):
-            # Patch in the output of all the heads, except sender, in this layer from clean run
-            for head_ind in range(model.config.num_attention_heads):
-                if head_ind != sender_head:
-                    input[bi, clean_last_token_indices[bi], head_ind] = clean_head_outputs[
-                        bi, clean_last_token_indices[bi], head_ind
-                    ]
-    else:
-        for bi in range(batch_size):
-            # Patch in the output of all the heads in this layer from clean run
-            input[bi, clean_last_token_indices[bi]] = clean_head_outputs[
-                bi, clean_last_token_indices[bi]
-            ]
+    for bi in range(batch_size):
+        # Patch in the output of all the heads in this layer from clean run
+        input[bi, clean_last_token_indices[bi]] = patched_head_outputs[
+            bi, clean_last_token_indices[bi]
+        ]
 
     input = rearrange(
         input,
@@ -302,23 +339,31 @@ def patching_heads(
         n_heads=model.config.num_attention_heads,
     )
 
-    w_o = model.model.layers[layer].self_attn.o_proj.weight
+    w = model.state_dict()[f"{layer}.weight"]
     output = einsum(
-        input, w_o, "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model"
+        input, w, "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model"
     )
 
     return output
 
 
 # %%
+receiver_heads = [
+    "model.layers.24.self_attn.q_proj",
+    "model.layers.19.self_attn.q_proj",
+    "model.layers.21.self_attn.q_proj",
+    "model.layers.22.self_attn.q_proj",
+]
+
 logit_values = torch.zeros(model.config.num_hidden_layers, model.config.num_attention_heads)
 batch_size = base_tokens.size(0)
 for layer in tqdm(range(model.config.num_hidden_layers)):
     for head in range(model.config.num_attention_heads):
         with torch.no_grad():
+            # Step 2
             with TraceDict(
                 model,
-                hook_points,
+                hook_points + receiver_heads,
                 retain_input=True,
                 edit_output=partial(
                     patching_heads,
@@ -327,8 +372,21 @@ for layer in tqdm(range(model.config.num_hidden_layers)):
                     clean_last_token_indices=base_last_token_indices,
                     corrupt_last_token_indices=source_last_token_indices,
                 ),
-            ) as patch_cache:
-                patched_out = model(base_tokens)
+            ) as patched_cache:
+                _ = model(base_tokens)
+
+            # Step 3
+            with TraceDict(
+                model,
+                receiver_heads,
+                retain_input=True,
+                edit_output=partial(
+                    patching_receiver_heads,
+                    patched_cache=patched_cache,
+                    clean_last_token_indices=base_last_token_indices,
+                ),
+            ) as _:
+                patched_out = model(source_tokens)
 
             logit_value = 0
             for bi in range(batch_size):
@@ -348,35 +406,37 @@ imshow(
 )
 
 # %%
-object_fetcher_heads = analysis_utils.compute_topk_components(logit_values, 30, largest=True)
-print(object_fetcher_heads)
+query_box_pos_fetcher = analysis_utils.compute_topk_components(logit_values, 5, largest=True)
+print(query_box_pos_fetcher)
 
 # %%
-layer = 24
-attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
+layer = 14
+attn_scores = analysis_utils.get_attn_scores(model, base_tokens, layer)
 # %%
-index = 5
+index = 2
 print(f"Layer: {layer}, Bi: {index}")
 pysvelte.AttentionMulti(
-    tokens=[tokenizer.decode(token) for token in source_tokens[index].cpu().tolist()],
+    tokens=[tokenizer.decode(token) for token in base_tokens[index].cpu().tolist()],
     attention=attn_scores[index].permute(1, 2, 0).cpu(),
 ).show()
 
 # %%
 # Computing average attention scores to correct object by top 5 object fetcher heads
 
-scores = defaultdict(float)
+scores = defaultdict(list)
 for layer in range(model.config.num_hidden_layers):
     attn_scores = analysis_utils.get_attn_scores(model, source_tokens, layer)
 
-    for head in range(model.config.num_attention_heads):        
+    for head in range(model.config.num_attention_heads):
         for bi in range(source_tokens.size(0)):
             correct_object = correct_answer_token[bi][base_last_token_indices[bi]]
             correct_object_pos = source_tokens[bi].tolist().index(correct_object)
 
-            scores[(layer, head)] += attn_scores[bi, head, source_last_token_indices[bi], correct_object_pos].item()
+            scores[(layer, head)].append(
+                attn_scores[bi, head, source_last_token_indices[bi], correct_object_pos].item()
+            )
 
-        scores[(layer, head)] /= source_tokens.size(0)
+        # scores[(layer, head)] /= source_tokens.size(0)
 
 # %%
 hook_point = [
@@ -392,7 +452,7 @@ with torch.no_grad():
 
 # %%
 # Computing the logit value of correct object written by object fetcher heads
-direct_logit_values = defaultdict(float)
+direct_logit_values = defaultdict(list)
 for layer in tqdm(range(model.config.num_hidden_layers)):
     for head in range(model.config.num_attention_heads):
         hook_point = f"model.layers.{layer}.self_attn.o_proj"
@@ -426,8 +486,34 @@ for layer in tqdm(range(model.config.num_hidden_layers)):
             head_unembed = decoder(head_output)
             correct_object = correct_answer_token[bi][base_last_token_indices[bi]]
             head_out_logit[bi] = head_unembed[correct_object]
+            direct_logit_values[(layer, head)].append(head_out_logit[bi].item())
 
-        direct_logit_values[(layer, head)] = head_out_logit.mean().item()
+        # direct_logit_values[(layer, head)] = head_out_logit.mean().item()
+
+# %%
+# Plot a scatter plot of one top object fetcher head with direct logit values vs attention scores
+# layer, head = (10, 10)
+np.random.seed(50)
+for layer, head in object_fetcher_heads[:10]:
+    x = scores[(layer, head)]
+    y = direct_logit_values[(layer, head)]
+    plt.scatter(x, y, alpha=0.5, c="steelblue", s=20)
+
+# Generate 10 random heads
+layers = np.random.choice(model.config.num_hidden_layers, 10)
+heads = np.random.choice(model.config.num_attention_heads, 10)
+for layer, head in zip(layers, heads):
+    x = scores[(layer, head)]
+    y = direct_logit_values[(layer, head)]
+    plt.scatter(x, y, alpha=0.7, c="pink", s=20, marker="x", label="Random 10 Heads")
+
+plt.xlabel("Attention Score")
+plt.ylabel("Correct Object Logit Value (log softmax)")
+plt.title("Direct Logit Value vs Attention Score")
+plt.grid(True)
+plt.xlim(0, 1)
+plt.legend(["Top 10 Object Fetcher Heads", "Random 10 Heads"])
+plt.show()
 
 # %%
 # Plot a scatter plot of direct logit values vs attention scores
