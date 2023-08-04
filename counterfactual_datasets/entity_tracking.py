@@ -142,7 +142,16 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
             if i + j >= num_samples:
                 break
 
-            base_example = input_ids[i + j].copy()
+            all_base_input_ids += [input_ids[i + j]]
+            all_base_input_last_pos += [last_token_indices[i + j]]
+            all_ctf_output_ids += [output_ids[i + j]]
+
+            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
+                (j + 1) % num_ents_or_ops
+            )
+            source_example = input_ids[random_source_index].copy()
+
+            # Randomizing the box indices in the source example
             random_box_indices = np.random.choice(
                 list(range(num_ents_or_ops, 10)), size=num_ents_or_ops, replace=False
             )
@@ -159,30 +168,22 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
             }
             for old_index, new_token in random_box.items():
                 old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[0, -1]
-                base_example = [
-                    new_token if (token == old_token) else token for token in base_example
+                source_example = [
+                    new_token if (token == old_token) else token for token in source_example
                 ]
 
-            all_base_input_ids += [base_example]
-            all_base_input_last_pos += [last_token_indices[i + j]]
+            # full_stop_token = 29889
+            # full_stop_token_pos = source_example.index(full_stop_token)
+            # query_box_index_token = tokenizer(
+            #     str((j + 1) % num_ents_or_ops), return_tensors="pt"
+            # ).input_ids[0, -1]
 
-            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
-                (j + 1) % num_ents_or_ops
-            )
-            source_example = input_ids[random_source_index].copy()
-            full_stop_token = 29889
-            full_stop_token_pos = source_example.index(full_stop_token)
-            query_box_index_token = tokenizer(
-                str((j + 1) % num_ents_or_ops), return_tensors="pt"
-            ).input_ids[0, -1]
-
-            for pos in range(full_stop_token_pos, len(source_example)):
-                if source_example[pos] == query_box_index_token:
-                    source_example[pos] = random_box[(j + 1) % num_ents_or_ops]
+            # for pos in range(full_stop_token_pos, len(source_example)):
+            #     if source_example[pos] == query_box_index_token:
+            #         source_example[pos] = random_box[(j + 1) % num_ents_or_ops]
 
             all_source_input_ids += [source_example]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
-            all_ctf_output_ids += [output_ids[i + (j + 1) % num_ents_or_ops]]
 
             all_intervention_ids += [0]
 
