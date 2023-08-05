@@ -136,6 +136,7 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
     all_source_input_last_pos = []
     all_ctf_output_ids = []
     all_intervention_ids = []
+    all_incorrect_output_ids = []
 
     for i in range(0, num_samples, num_ents_or_ops):
         for j in range(num_ents_or_ops):
@@ -146,9 +147,17 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_ctf_output_ids += [output_ids[i + j]]
 
-            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
-                (j + 1) % num_ents_or_ops
-            )
+            temp = []
+            for ind in range(1, num_ents_or_ops):
+                temp += [
+                    output_ids[i + ((j + ind) % num_ents_or_ops)][
+                        last_token_indices[i + ((j + ind) % num_ents_or_ops)]
+                    ]
+                ]
+            all_incorrect_output_ids += [temp]
+
+            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
+            random_source_index += (j + 1) % num_ents_or_ops
             source_example = input_ids[random_source_index].copy()
 
             # Randomizing the box indices in the source example
@@ -172,16 +181,6 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
                     new_token if (token == old_token) else token for token in source_example
                 ]
 
-            # full_stop_token = 29889
-            # full_stop_token_pos = source_example.index(full_stop_token)
-            # query_box_index_token = tokenizer(
-            #     str((j + 1) % num_ents_or_ops), return_tensors="pt"
-            # ).input_ids[0, -1]
-
-            # for pos in range(full_stop_token_pos, len(source_example)):
-            #     if source_example[pos] == query_box_index_token:
-            #         source_example[pos] = random_box[(j + 1) % num_ents_or_ops]
-
             all_source_input_ids += [source_example]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 
@@ -194,6 +193,7 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
         all_source_input_last_pos,
         all_ctf_output_ids,
         all_intervention_ids,
+        all_incorrect_output_ids,
     )
 
 

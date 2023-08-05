@@ -28,7 +28,7 @@ tokenizer.pad_token_id = tokenizer.eos_token_id
 # %%
 raw_data = box_index_aligner_examples(
     tokenizer,
-    num_samples=6,
+    num_samples=60,
     data_file="./box_datasets/no_instructions/3/train.jsonl",
     # object_file="./box_datasets/objects_with_bnc_frequency.csv",
     architecture="LLaMAForCausalLM",
@@ -381,16 +381,22 @@ for layer in tqdm(range(model.config.num_hidden_layers)):
                 retain_input=True,
                 edit_output=partial(
                     patching_receiver_heads,
-                    patched_cache=patched_cache,range(10, 20)
-                logits = torch.log_softmax(
-                    patched_out.logits[bi, base_last_token_indices[bi], :], dim=-1
-                )
-                logit_value += logits[correct_answer_token[bi][base_last_token_indices[bi]]]
+                    patched_cache=patched_cache,
+                    receiver_heads=object_fetcher_heads,
+                    clean_last_token_indices=base_last_token_indices,
+                ),
+            ) as _:
+                patched_out = model(base_tokens)
+            
+            logits = torch.log_softmax(
+                patched_out.logits[bi, base_last_token_indices[bi], :], dim=-1
+            )
+            logit_value += logits[correct_answer_token[bi][base_last_token_indices[bi]]]
 
         logit_values[layer, head] = logit_value / batch_size
 
 # %%
-logit_values = torch.load("object_fetcher_heads_path_patching.pt")
+logit_values = torch.load("object_fetcher_heads_act_patching.pt")
 # %%
 imshow(
     (logit_values - torch.mean(logit_values)) / torch.std(logit_values),
@@ -400,14 +406,14 @@ imshow(
 )
 
 # %%
-object_fetcher_heads = analysis_utils.compute_topk_components(logit_values, 5, largest=False)
+object_fetcher_heads = analysis_utils.compute_topk_components(logit_values, 10, largest=True)
 print(object_fetcher_heads)
 
 # %%
-layer = 12
+layer = 21
 attn_scores = analysis_utils.get_attn_scores(model, base_tokens, layer)
 # %%
-index = 2
+index = 3
 print(f"Layer: {layer}, Bi: {index}")
 pysvelte.AttentionMulti(
     tokens=[tokenizer.decode(token) for token in base_tokens[index].cpu().tolist()],
@@ -492,6 +498,14 @@ for layer, head in object_fetcher_heads:
     y = direct_logit_values[(layer, head)]
     plt.scatter(x, y, alpha=0.5, s=40, label=f"({layer}, {head})")
 
+    plt.xlabel("Attention Score")
+    plt.ylabel("Correct Object Logit Value (log softmax)")
+    plt.title("Direct Logit Value vs Attention Score")
+    plt.grid(True)
+    plt.xlim(0, 1)
+    plt.legend()
+    plt.show()
+
 # Generate 10 random heads
 # layers = np.random.choice(model.config.num_hidden_layers, 10)
 # heads = np.random.choice(model.config.num_attention_heads, 10)
@@ -500,37 +514,69 @@ for layer, head in object_fetcher_heads:
 #     y = direct_logit_values[(layer, head)]
 #     plt.scatter(x, y, alpha=0.7, c="pink", s=20, marker="x", label="Random 10 Heads")
 
-plt.xlabel("Attention Score")
-plt.ylabel("Correct Object Logit Value (log softmax)")
-plt.title("Direct Logit Value vs Attention Score")
-plt.grid(True)
-plt.xlim(0, 1)
-plt.legend()
-plt.show()
+
 
 # %%
-# Plot a scatter plot of direct logit values vs attention scores
-x = []
-y = []
-for layer in range(model.config.num_hidden_layers):
+###############################################################
+# Direct logit attribution to identify object fetcher heads
+###############################################################
+
+hook_point = [
+    f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)
+]
+with torch.no_grad():
+    with TraceDict(
+        model,
+        hook_point,
+        retain_input=True,
+    ) as cache:
+        _ = model(base_tokens)
+
+batch_size = base_tokens.size(0)
+d_head = model.config.hidden_size // model.config.num_attention_heads
+
+direct_logit_values = torch.zeros(
+    (model.config.num_hidden_layers, model.config.num_attention_heads)
+).to(model.device)
+for layer in tqdm(range(model.config.num_hidden_layers)):
     for head in range(model.config.num_attention_heads):
-        x.append(scores[(layer, head)])
-        y.append(direct_logit_values[(layer, head)])
+        hook_point = f"model.layers.{layer}.self_attn.o_proj"
+        all_head_out = cache[hook_point].input
+        decoder = torch.nn.Sequential(
+            model.model.layers[layer].self_attn.o_proj,
+            model.model.norm,
+            model.lm_head,
+            torch.nn.LogSoftmax(dim=-1),
+        )
 
-# scatter(x, y)
+        start = head * d_head
+        end = (head + 1) * d_head
 
-plt.scatter(x, y, alpha=0.5, s=10)
-plt.xlabel("Attention Score")
-plt.ylabel("Correct Object Logit Value (log softmax)")
-plt.title("Direct Logit Value vs Attention Score")
-plt.grid(True)
-plt.xlim(0, 1)
+        for bi in range(batch_size):
+            head_output = all_head_out[bi, base_last_token_indices[bi], start:end]
+            head_output = torch.concat(
+                (
+                    torch.zeros(head * d_head).to(head_output.device),
+                    head_output,
+                    torch.zeros((model.config.num_attention_heads - head - 1) * d_head).to(
+                        head_output.device
+                    ),
+                ),
+                dim=0,
+            )
+            head_unembed = decoder(head_output)
+            correct_object = correct_answer_token[bi][base_last_token_indices[bi]]
+            direct_logit_values[(layer, head)] += torch.dot(head_unembed, model.lm_head.weight[correct_object])
 
-# Color the top 5 object fetcher heads
-for layer, head in object_fetcher_heads:
-    plt.scatter(scores[(layer, head)], direct_logit_values[(layer, head)], c="green", alpha=0.5)
-plt.legend(["Other Heads", "Top 30 Object Fetcher Heads"])
-plt.show()
+        direct_logit_values[(layer, head)] = direct_logit_values[(layer, head)] / batch_size
+
+# %%
+imshow(
+    (direct_logit_values - torch.mean(logit_values)) / torch.std(logit_values),
+    # title="Query Box Reference Mover Heads",
+    # yaxis_title="Layer",
+    # xaxis_title="Head",
+)
 
 
 # %%
