@@ -95,11 +95,19 @@ def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architect
         data = [json.loads(line) for line in f]
 
     assert num_samples <= len(data)
-    prompts, labels = [], []
+    prompts, incorrect_object_tokens, labels = [], [], []
 
     for i in range(num_samples):
         prompts.append(" ".join(data[i]["sentence"].split(" ")[:-1]))
         label = data[i]["sentence"].split(" ")[-1][:-1]
+        incorrect_objects = [
+            segment.split(" ")[0].lower()
+            for segment in data[i]["sentence"].split(".")[0].split(", ")
+        ]
+
+        incorrect_objects.remove(label)
+        incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
+
         # 0th index will be BOS token for llama-like tokenizer
         if architecture in [
             "AlignableLlamaForCausalLM",
@@ -122,7 +130,7 @@ def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architect
     last_token_indices = last_token_indices.tolist()
     output_ids = output_ids.tolist()
 
-    return input_ids, last_token_indices, output_ids
+    return input_ids, last_token_indices, output_ids, incorrect_object_tokens
 
 
 def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_ops, architecture):
@@ -200,63 +208,36 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
 def modified_box_name_alignment_example_sampler(
     tokenizer, num_samples, data_file, object_file, num_ents_or_ops, architecture
 ):
-    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
-        tokenizer, num_samples, data_file, architecture
-    )
+    (
+        input_ids,
+        last_token_indices,
+        output_ids,
+        incorrect_object_ids,
+    ) = entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture)
 
     all_base_input_ids = []
     all_base_input_last_pos = []
     all_source_input_ids = []
     all_source_input_last_pos = []
     all_ctf_output_ids = []
+    all_exp_objects = []
     all_intervention_ids = []
-    all_incorrect_out_ids = []
 
     for i in range(0, num_samples, num_ents_or_ops):
         if i + num_ents_or_ops > num_samples:
             break
         for j in range(num_ents_or_ops):
-            # Randomize query box index in the base example
-            base_example = input_ids[i + j].copy()
-            while True:
-                # Ensuring the change in position for the query box
-                random_pos = np.random.choice(list(range(num_ents_or_ops)))
-                if random_pos != j + 1:
-                    break
-            random_pos_token = (
-                tokenizer(str(random_pos), return_tensors="pt").input_ids[0, -1].item()
-            )
-            query_box_token = (
-                tokenizer(str((j + 1) % num_ents_or_ops), return_tensors="pt")
-                .input_ids[0, -1]
-                .item()
-            )
-            full_stop_token = 29889
-            full_stop_token_index = base_example.index(full_stop_token)
-            for ind in range(full_stop_token_index):
-                if base_example[ind] == random_pos_token:
-                    base_example[ind] = query_box_token
-                elif base_example[ind] == query_box_token:
-                    base_example[ind] = random_pos_token
+            all_base_input_ids += [input_ids[i + j]]
+            all_base_input_last_pos += [last_token_indices[i + j]]
+            all_exp_objects += [incorrect_object_ids[i + j]]
 
-            all_base_input_ids += [base_example]
-            all_base_input_last_pos += [
-                last_token_indices[i + j]
-            ]  # Won't change because of randomization
-            all_ctf_output_ids += [
-                output_ids[i + random_pos]
-            ]  # New output will acc. to the new position of the query box
-            # all_incorrect_out_ids += [
-            #     output_ids[i + j]
-            # ]  # Incorrect output will be the original output
-
-            # Choosing a random source example
             random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
                 (j + 1) % num_ents_or_ops
             )
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 
+            all_ctf_output_ids += [output_ids[i + (j + 1) % num_ents_or_ops]]
             all_intervention_ids += [0]
 
     return (
@@ -265,8 +246,8 @@ def modified_box_name_alignment_example_sampler(
         all_source_input_ids,
         all_source_input_last_pos,
         all_ctf_output_ids,
+        all_exp_objects,
         all_intervention_ids,
-        all_incorrect_out_ids,
     )
 
 
@@ -321,6 +302,7 @@ def alignment_example_sampler(
         all_source_input_ids,
         all_source_input_last_pos,
         all_ctf_output_ids,
+        all_incorrect_object_ids,
         all_intervention_ids,
     ) = aligner_func(tokenizer, data_size, data_file, object_file, num_ents_or_ops, architecture)
 
@@ -330,6 +312,7 @@ def alignment_example_sampler(
         all_source_input_ids,
         all_source_input_last_pos,
         all_ctf_output_ids,
+        all_incorrect_object_ids,
         all_intervention_ids,
     )
 

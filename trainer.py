@@ -125,9 +125,7 @@ class Aligner(object):
         gradient_accumulation_steps,
     ):
         if self.is_master and not self.is_wandb:
-            log_train = open(
-                os.path.join(output_dir, "train_log.txt"), "w", buffering=1
-            )
+            log_train = open(os.path.join(output_dir, "train_log.txt"), "w", buffering=1)
             log_eval = open(os.path.join(output_dir, "eval_log.txt"), "w", buffering=1)
             test_eval = open(os.path.join(output_dir, "test_log.txt"), "w", buffering=1)
             print(
@@ -155,9 +153,7 @@ class Aligner(object):
         self.model.model.temperature.data = temperature_schedule[total_step]
 
         for epoch in train_iterator:
-            epoch_iterator = tqdm(
-                train_dataloader, desc=f"Epoch: {epoch}", position=0, leave=True
-            )
+            epoch_iterator = tqdm(train_dataloader, desc=f"Epoch: {epoch}", position=0, leave=True)
             for step, inputs in enumerate(epoch_iterator):
                 for k, v in inputs.items():
                     if v is not None and isinstance(v, torch.Tensor):
@@ -182,11 +178,15 @@ class Aligner(object):
 
                 labels = []
                 preds = []
+                incorrect_objects = []
                 for bi, last_token_pos in enumerate(inputs["base_input_last_pos"]):
                     labels.append(inputs["labels"][bi, last_token_pos])
                     preds.append(outputs.logits[bi, last_token_pos])
+                    incorrect_objects.append(inputs["incorrect_objects"][bi])
 
-                step_accuracy = self.compute_metrics_fn(preds, labels)["accuracy"]
+                step_accuracy = self.compute_metrics_fn(preds, labels, incorrect_objects)[
+                    "accuracy"
+                ]
 
                 if self.is_master and total_step % log_step == 0:
                     if self.is_wandb:
@@ -198,12 +198,8 @@ class Aligner(object):
                                 "train/loss": loss.item(),
                                 "train/step_accuracy": step_accuracy,
                                 "train/temperature": self.model.model.temperature.data,
-                                "train/unified_boundary": intervention_boundaries.data[
-                                    0
-                                ],
-                                "train/unified_boundary (dummy)": intervention_boundaries.data[
-                                    1
-                                ],
+                                "train/unified_boundary": intervention_boundaries.data[0],
+                                "train/unified_boundary (dummy)": intervention_boundaries.data[1],
                             },
                             step=total_step,
                         )
@@ -229,6 +225,7 @@ class Aligner(object):
                     if total_step != 0 and total_step % valid_steps == 0:
                         eval_labels = []
                         eval_preds = []
+                        incorrect_objects = []
                         self.model.eval()
                         with torch.no_grad():
                             for step, inputs in enumerate(dev_dataloader):
@@ -250,17 +247,14 @@ class Aligner(object):
                                     labels=inputs["labels"],
                                 )
 
-                                for bi, last_token_pos in enumerate(
-                                    inputs["base_input_last_pos"]
-                                ):
-                                    eval_labels.append(
-                                        inputs["labels"][bi, last_token_pos]
-                                    )
-                                    eval_preds.append(
-                                        outputs.logits[bi, last_token_pos]
-                                    )
+                                for bi, last_token_pos in enumerate(inputs["base_input_last_pos"]):
+                                    eval_labels.append(inputs["labels"][bi, last_token_pos])
+                                    eval_preds.append(outputs.logits[bi, last_token_pos])
+                                    incorrect_objects.append(inputs["incorrect_objects"][bi])
 
-                        eval_metrics = self.compute_metrics_fn(eval_preds, eval_labels)
+                        eval_metrics = self.compute_metrics_fn(
+                            eval_preds, eval_labels, incorrect_objects
+                        )
 
                         if self.is_wandb:
                             wandb.log(
@@ -298,9 +292,7 @@ class Aligner(object):
                         optimizer.step()
                         scheduler.step()
                         self.model.zero_grad()
-                        self.model.model.temperature.data = temperature_schedule[
-                            total_step
-                        ]
+                        self.model.model.temperature.data = temperature_schedule[total_step]
 
                 total_step += 1
 
@@ -312,6 +304,7 @@ class Aligner(object):
             self.model.eval()
             eval_labels = []
             eval_preds = []
+            incorrect_objects = []
             with torch.no_grad():
                 for step, inputs in enumerate(test_dataloader):
                     for k, v in inputs.items():
@@ -335,15 +328,14 @@ class Aligner(object):
                     for bi, last_token_pos in enumerate(inputs["base_input_last_pos"]):
                         eval_labels.append(inputs["labels"][bi, last_token_pos])
                         eval_preds.append(outputs.logits[bi, last_token_pos])
-            eval_metrics = self.compute_metrics_fn(eval_preds, eval_labels)
+                        incorrect_objects.append(inputs["incorrect_objects"][bi])
+            eval_metrics = self.compute_metrics_fn(eval_preds, eval_labels, incorrect_objects)
 
             if self.is_wandb:
                 wandb.log({"test/accuracy": eval_metrics["accuracy"]}, step=total_step)
                 wandb.finish()
             else:
-                test_eval = open(
-                    os.path.join(output_dir, "test_log.txt"), "a", buffering=1
-                )
+                test_eval = open(os.path.join(output_dir, "test_log.txt"), "a", buffering=1)
                 print("{}".format(eval_metrics["accuracy"]), file=test_eval)
                 test_eval.close()
         ###############################

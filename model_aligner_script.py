@@ -71,6 +71,7 @@ def load_data(
         raw_data[3][:train_size],
         raw_data[4][:train_size],
         raw_data[5][:train_size],
+        raw_data[6][:train_size],
     )
     raw_eval = (
         raw_data[0][train_size : train_size + eval_size],
@@ -79,6 +80,7 @@ def load_data(
         raw_data[3][train_size : train_size + eval_size],
         raw_data[4][train_size : train_size + eval_size],
         raw_data[5][train_size : train_size + eval_size],
+        raw_data[6][train_size : train_size + eval_size],
     )
     raw_test = (
         raw_data[0][train_size + eval_size :],
@@ -87,6 +89,7 @@ def load_data(
         raw_data[3][train_size + eval_size :],
         raw_data[4][train_size + eval_size :],
         raw_data[5][train_size + eval_size :],
+        raw_data[6][train_size + eval_size :],
     )
 
     train_dataset = Dataset.from_dict(
@@ -96,7 +99,8 @@ def load_data(
             "source_input_ids": raw_train[2],
             "source_input_last_pos": raw_train[3],
             "labels": raw_train[4],
-            "intervention_ids": raw_train[5],
+            "incorrect_objects": raw_train[5],
+            "intervention_ids": raw_train[6],
         }
     ).with_format("torch")
     train_dataloader = DataLoader(
@@ -111,7 +115,8 @@ def load_data(
             "source_input_ids": raw_eval[2],
             "source_input_last_pos": raw_eval[3],
             "labels": raw_eval[4],
-            "intervention_ids": raw_eval[5],
+            "incorrect_objects": raw_eval[5],
+            "intervention_ids": raw_eval[6],
         }
     ).with_format("torch")
     eval_dataloader = DataLoader(
@@ -126,7 +131,8 @@ def load_data(
             "source_input_ids": raw_test[2],
             "source_input_last_pos": raw_test[3],
             "labels": raw_test[4],
-            "intervention_ids": raw_test[5],
+            "incorrect_objects": raw_test[5],
+            "intervention_ids": raw_test[6],
         }
     ).with_format("torch")
     test_dataloader = DataLoader(
@@ -187,17 +193,25 @@ def align_model(
                 optimizer, num_warmup_steps=warm_up_steps, num_training_steps=t_total
             )
 
-            def compute_metrics(eval_preds, eval_labels):
+            def compute_metrics(eval_preds, eval_labels, incorrect_objects):
                 # eval_preds: (#batch, vocab_size)
                 # eval_labels: (#batch)
                 total_count = 0
                 correct_count = 0
-                for eval_pred, eval_label in zip(eval_preds, eval_labels):
-                    actual_test_labels = eval_label
-                    pred_test_labels = torch.argmax(eval_pred, dim=-1)
-                    correct_labels = actual_test_labels == pred_test_labels
+                for pred, correct_object, incorrect_objs in zip(
+                    eval_preds, eval_labels, incorrect_objects
+                ):
+                    first_incorrect_object = incorrect_objs[0]
+                    second_incorrect_object = incorrect_objs[1]
+
+                    if (
+                        pred[correct_object] >= pred[first_incorrect_object]
+                        and pred[correct_object] >= pred[second_incorrect_object]
+                    ):
+                        correct_count += 1
+
                     total_count += 1
-                    correct_count += correct_labels.sum().tolist()
+
                 accuracy = round(correct_count / total_count, 2)
                 return {"accuracy": accuracy}
 
@@ -346,7 +360,7 @@ def parse_args():
     parser.add_argument(
         "--data_file",
         type=str,
-        default="./box_datasets/no_instructions/3/train.jsonl",
+        default="./box_datasets/no_instructions/alternative/3/train.jsonl",
         help="Path to data file",
     )
     parser.add_argument(
@@ -382,7 +396,7 @@ def parse_args():
     parser.add_argument(
         "--train_log_steps",
         type=int,
-        default=5,
+        default=3,
         help="Log step for training",
     )
     parser.add_argument(
