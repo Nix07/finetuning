@@ -119,3 +119,41 @@ def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True)
     # Get the top indices as a list of 2D indices (row, column)
     top_components = top_components.tolist()
     return top_components
+
+
+def comparison_metric(eval_preds, eval_labels, incorrect_objects):
+    # eval_preds: (#batch, vocab_size)
+    # eval_labels: (#batch)
+    # incorrect_objects: (#batch, #incorrect_objects)
+    total_count = 0
+    correct_count = 0
+    for pred, correct_object, incorrect_objs in zip(eval_preds, eval_labels, incorrect_objects):
+        correctness = True
+        for incorrect_object in incorrect_objs:
+            if pred[correct_object] >= pred[incorrect_object]:
+                continue
+            else:
+                correctness = False
+                break
+
+        if correctness:
+            correct_count += 1
+
+        total_count += 1
+
+    accuracy = round(correct_count / total_count, 2)
+    return {"accuracy": accuracy}
+
+
+def top_token_comparison(eval_preds, eval_labels, incorrect_objects=None):
+    # eval_preds: (#batch, vocab_size)
+    # eval_labels: (#batch)
+    total_count = 0
+    correct_count = 0
+    for eval_pred, eval_label in zip(eval_preds, eval_labels):
+        pred_test_labels = torch.argmax(eval_pred, dim=-1)
+        correct_count += 1 if eval_label == pred_test_labels else 0
+        total_count += 1
+
+    accuracy = round(correct_count / total_count, 2)
+    return {"accuracy": accuracy}

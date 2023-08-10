@@ -17,6 +17,7 @@ from trainer import Aligner, CACHE_DIR
 from torch.utils.data import DataLoader, SequentialSampler
 from models.modelings_alignable import AutoAlignableModel
 from tqdm import tqdm
+from analysis_utils import top_token_comparison, comparison_metric
 
 from transformers.utils import logging
 
@@ -46,15 +47,18 @@ def load_data(
     num_ents_or_ops,
     batch_size,
     object_file,
+    alt_examples,
 ):
     raw_data = alignment_example_sampler(
-        tokenizer,
-        data_size,
-        aligner_func,
-        data_file,
-        num_ents_or_ops,
+        tokenizer=tokenizer,
+        data_size=data_size,
+        aligner_func=aligner_func,
+        data_file=data_file,
+        num_ents_or_ops=num_ents_or_ops,
         architecture=architecture,
         object_file=object_file,
+        few_shot=True,
+        alt_examples=alt_examples,
     )
 
     train_size = int(0.8 * len(raw_data[0]))
@@ -154,12 +158,13 @@ def align_model(
     num_train_epochs,
     batch_size,
     train_log_steps,
+    valid_log_steps,
     seed,
     output_dir,
 ):
     for rel_pos in range(0, 4):
         for layer in range(0, aligning_layers, layers_interval):
-            print(f"Starting traing for layer: {layer}")
+            print(f"Starting training for layer: {layer}")
             alignment_config = {
                 "layer": layer,
                 "rel_pos": rel_pos,
@@ -193,28 +198,6 @@ def align_model(
                 optimizer, num_warmup_steps=warm_up_steps, num_training_steps=t_total
             )
 
-            def compute_metrics(eval_preds, eval_labels, incorrect_objects):
-                # eval_preds: (#batch, vocab_size)
-                # eval_labels: (#batch)
-                total_count = 0
-                correct_count = 0
-                for pred, correct_object, incorrect_objs in zip(
-                    eval_preds, eval_labels, incorrect_objects
-                ):
-                    first_incorrect_object = incorrect_objs[0]
-                    second_incorrect_object = incorrect_objs[1]
-
-                    if (
-                        pred[correct_object] >= pred[first_incorrect_object]
-                        and pred[correct_object] >= pred[second_incorrect_object]
-                    ):
-                        correct_count += 1
-
-                    total_count += 1
-
-                accuracy = round(correct_count / total_count, 2)
-                return {"accuracy": accuracy}
-
             run_name = f"seed.{seed}.rel.{rel_pos}.layer.{layer}/"
             if not os.path.exists(f"{output_dir}"):
                 os.mkdir(f"{output_dir}")
@@ -231,7 +214,7 @@ def align_model(
                 n_gpu=1,
                 model_name=run_name,
                 device="cuda",
-                compute_metrics=compute_metrics,
+                compute_metrics=top_token_comparison,
             )
 
             aligner.train(
@@ -241,7 +224,7 @@ def align_model(
                 optimizer,
                 scheduler,
                 log_step=train_log_steps,
-                valid_steps=20,
+                valid_steps=valid_log_steps,
                 output_dir=output_file_path,
                 epochs=num_train_epochs,
                 gradient_accumulation_steps=1,
@@ -297,6 +280,9 @@ def plot_alignment_acc(
 
 # %%
 def main(args):
+    if args.alt_examples:
+        args.data_file = args.data_file.replace("original", "alternative")
+
     print(args)
 
     # Load tokenizer
@@ -321,6 +307,7 @@ def main(args):
         args.num_entities_or_ops,
         args.batch_size,
         args.object_file,
+        args.alt_examples,
     )
 
     # Aligning model
@@ -334,6 +321,7 @@ def main(args):
         args.num_train_epochs,
         args.batch_size,
         args.train_log_steps,
+        args.valid_log_steps,
         args.seed,
         args.output_dir,
     )
@@ -358,9 +346,15 @@ def parse_args():
         help="Path to pretrained model",
     )
     parser.add_argument(
+        "--alt_examples",
+        type=bool,
+        default=False,
+        help="Use alternative examples",
+    )
+    parser.add_argument(
         "--data_file",
         type=str,
-        default="./box_datasets/no_instructions/alternative/3/train.jsonl",
+        default="./box_datasets/no_instructions/original/3/train.jsonl",
         help="Path to data file",
     )
     parser.add_argument(
@@ -398,6 +392,12 @@ def parse_args():
         type=int,
         default=3,
         help="Log step for training",
+    )
+    parser.add_argument(
+        "--valid_log_steps",
+        type=int,
+        default=20,
+        help="Log step for validation",
     )
     parser.add_argument(
         "--seed",

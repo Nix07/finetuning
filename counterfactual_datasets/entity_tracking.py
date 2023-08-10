@@ -12,7 +12,7 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
     objects = pd.read_csv(object_file)
 
     assert num_samples <= len(data)
-    prompts, labels = [], []
+    prompts, all_object_tokens, labels = [], [], []
 
     for i in range(num_samples):
         # Example with original object
@@ -22,8 +22,13 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
         # 0th index will be BOS token for llama-like tokenizer
         labels.append(tokenizer.encode(label)[1])
 
+        all_objects = [
+            segment.split(" ")[0].lower()
+            for segment in data[i]["sentence"].split(".")[0].split(", ")
+        ]
+        all_object_tokens.append([tokenizer.encode(obj)[1] for obj in all_objects])
+
         # Example with random object
-        # TODO: Assuming no operation instructions
         box_num = prompt.split(". ")[-1].split(" ")[1]
         query = prompt.split(". ")[-1]
         clean_prompt = "".join(prompt.split(". ")[0])
@@ -39,6 +44,8 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
         prompt = clean_prompt + ". " + query
         prompts.append(" ".join(prompt.split(" ")[:-1]))
         labels.append(tokenizer.encode(random_object)[1])
+        all_objects = [random_object if obj == object else obj for obj in all_objects]
+        all_object_tokens.append([tokenizer.encode(obj)[1] for obj in all_objects])
 
     input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
     last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
@@ -55,14 +62,14 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
     last_token_indices = last_token_indices.tolist()
     output_ids = output_ids.tolist()
 
-    return input_ids, last_token_indices, output_ids
+    return input_ids, last_token_indices, output_ids, all_object_tokens
 
 
 def object_alignment_example_sampler(
     tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops=None
 ):
-    input_ids, last_token_indices, output_ids = object_alignment_example_generator(
-        tokenizer, 2 * num_samples, data_file, object_file
+    input_ids, last_token_indices, output_ids, object_ids = object_alignment_example_generator(
+        tokenizer, num_samples, data_file, object_file
     )
 
     all_base_input_ids = []
@@ -70,14 +77,16 @@ def object_alignment_example_sampler(
     all_source_input_ids = []
     all_source_input_last_pos = []
     all_ctf_output_ids = []
+    all_object_ids = []
     all_intervention_ids = []
 
-    for i in range(0, 2 * num_samples, 2):
+    for i in range(0, num_samples, 2):
         all_base_input_ids += [input_ids[i]]
         all_source_input_ids += [input_ids[i + 1]]
         all_base_input_last_pos += [last_token_indices[i]]
         all_source_input_last_pos += [last_token_indices[i + 1]]
         all_ctf_output_ids += [output_ids[i + 1]]
+        all_object_ids += [object_ids[i]]
         all_intervention_ids += [0]
 
     return (
@@ -86,27 +95,40 @@ def object_alignment_example_sampler(
         all_source_input_ids,
         all_source_input_last_pos,
         all_ctf_output_ids,
+        all_object_ids,
         all_intervention_ids,
     )
 
 
-def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture):
+def entity_tracking_example_sampler(
+    tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
+):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
 
     assert num_samples <= len(data)
     prompts, incorrect_object_tokens, labels = [], [], []
 
+    if alt_examples:
+        priminig_examples = """Watch is in Box 0, nothing is in Box 1, bottle is in Box 2. Box 2 contains bottle.\n Wire is in Box 0, biscotti is in Box 1, camera is in Box 2. Box 1 contains biscotti.\n Nothing is in Box 0, tetrapod is in Box 1, incense is in Box 2. Box 0 contains nothing.\n """
+    else:
+        priminig_examples = ""
+
     for i in range(num_samples):
-        prompts.append(" ".join(data[i]["sentence"].split(" ")[:-1]))
         label = data[i]["sentence"].split(" ")[-1][:-1]
+        object_index_in_segment = 0 if alt_examples else 3
         incorrect_objects = [
-            segment.split(" ")[0].lower()
+            segment.split(" ")[object_index_in_segment].lower()
             for segment in data[i]["sentence"].split(".")[0].split(", ")
         ]
-
         incorrect_objects.remove(label)
         incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
+
+        prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        if few_shot:
+            prompt = priminig_examples + prompt
+
+        prompts.append(prompt)
 
         # 0th index will be BOS token for llama-like tokenizer
         if architecture in [
@@ -206,14 +228,23 @@ def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_op
 
 
 def modified_box_name_alignment_example_sampler(
-    tokenizer, num_samples, data_file, object_file, num_ents_or_ops, architecture
+    tokenizer,
+    num_samples,
+    data_file,
+    object_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
 ):
     (
         input_ids,
         last_token_indices,
         output_ids,
         incorrect_object_ids,
-    ) = entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture)
+    ) = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
+    )
 
     all_base_input_ids = []
     all_base_input_last_pos = []
@@ -295,6 +326,8 @@ def alignment_example_sampler(
     num_ents_or_ops=None,
     object_file=None,
     architecture=None,
+    few_shot=False,
+    alt_examples=False,
 ):
     (
         all_base_input_ids,
@@ -304,7 +337,16 @@ def alignment_example_sampler(
         all_ctf_output_ids,
         all_incorrect_object_ids,
         all_intervention_ids,
-    ) = aligner_func(tokenizer, data_size, data_file, object_file, num_ents_or_ops, architecture)
+    ) = aligner_func(
+        tokenizer=tokenizer,
+        num_samples=data_size,
+        data_file=data_file,
+        object_file=object_file,
+        num_ents_or_ops=num_ents_or_ops,
+        architecture=architecture,
+        few_shot=few_shot,
+        alt_examples=alt_examples,
+    )
 
     return (
         all_base_input_ids,
@@ -315,31 +357,3 @@ def alignment_example_sampler(
         all_incorrect_object_ids,
         all_intervention_ids,
     )
-
-
-def factual_sampler(
-    tokenizer,
-    max_n_training_examples,
-    data_file,
-    achitecture,
-    object_file,
-    num_ents_or_ops,
-    game,
-):
-    all_input_ids = []
-    all_last_token_indices = []
-    all_output_ids = []  # this one does not have input ids, etc..
-
-    if game == "entity_tracking":
-        (
-            all_input_ids,
-            all_last_token_indices,
-            all_output_ids,
-        ) = object_alignment_example_generator(
-            tokenizer,
-            max_n_training_examples,
-            data_file,
-            object_file,
-        )
-
-    return all_input_ids, all_last_token_indices, all_output_ids
