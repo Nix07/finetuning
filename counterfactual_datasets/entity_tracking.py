@@ -21,7 +21,7 @@ def object_alignment_example_generator(
     else:
         priminig_examples = ""
 
-    for i in range(num_samples // 2):
+    for i in range(num_samples):
         # Example with original object
         label = data[i]["sentence"].split(" ")[-1][:-1]
         # 0th index will be BOS token for llama-like tokenizer
