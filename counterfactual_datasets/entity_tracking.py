@@ -5,7 +5,9 @@ import pandas as pd
 import numpy as np
 
 
-def object_alignment_example_generator(tokenizer, num_samples, data_file, object_file):
+def object_alignment_example_generator(
+    tokenizer, num_samples, data_file, object_file, few_shot, alt_examples
+):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
 
@@ -14,26 +16,43 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
     assert num_samples <= len(data)
     prompts, all_object_tokens, labels = [], [], []
 
-    for i in range(num_samples):
+    if alt_examples:
+        priminig_examples = """Watch is in Box 0, nothing is in Box 1, bottle is in Box 2. Box 2 contains bottle.\n Wire is in Box 0, biscotti is in Box 1, camera is in Box 2. Box 1 contains biscotti.\n Nothing is in Box 0, tetrapod is in Box 1, incense is in Box 2. Box 0 contains nothing.\n """
+    else:
+        priminig_examples = ""
+
+    for i in range(num_samples // 2):
         # Example with original object
-        prompt = data[i]["sentence"]
-        prompts.append(" ".join(prompt.split(" ")[:-1]))
-        label = prompt.split(" ")[-1][:-1]
+        label = data[i]["sentence"].split(" ")[-1][:-1]
         # 0th index will be BOS token for llama-like tokenizer
         labels.append(tokenizer.encode(label)[1])
 
+        object_index_in_segment = 0 if alt_examples else 3
         all_objects = [
-            segment.split(" ")[0].lower()
+            segment.split(" ")[object_index_in_segment].lower()
             for segment in data[i]["sentence"].split(".")[0].split(", ")
         ]
         all_object_tokens.append([tokenizer.encode(obj)[1] for obj in all_objects])
 
+        org_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        prompt = priminig_examples + org_prompt if few_shot else org_prompt
+        prompts.append(prompt)
+
         # Example with random object
-        box_num = prompt.split(". ")[-1].split(" ")[1]
-        query = prompt.split(". ")[-1]
-        clean_prompt = "".join(prompt.split(". ")[0])
-        object = clean_prompt.split(", ")[int(box_num)].split(" ")[-1]
+        box_num = org_prompt.split(". ")[-1].split(" ")[1]
+        query = org_prompt.split(". ")[-1]
+        clean_prompt = org_prompt.split(". ")[0]
+        object = (
+            clean_prompt.split(", ")[int(box_num)].split(" ")[0]
+            if alt_examples
+            else clean_prompt.split(", ")[int(box_num)].split(" ")[-1]
+        )
         random_object = random.choice(objects["object_name"].tolist())
+
+        # Capitalizing the first letter of the object
+        if alt_examples and int(box_num) == 0:
+            random_object = random_object[0].upper() + random_object[1:]
+
         clean_prompt = (
             ", ".join(clean_prompt.split(", ")[: int(box_num)])
             + (", " if int(box_num) != 0 else "")
@@ -41,9 +60,15 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
             + (", " if int(box_num) != len(clean_prompt.split(", ")) - 1 else "")
             + ", ".join(clean_prompt.split(", ")[int(box_num) + 1 :])
         )
-        prompt = clean_prompt + ". " + query
-        prompts.append(" ".join(prompt.split(" ")[:-1]))
-        labels.append(tokenizer.encode(random_object)[1])
+
+        prompt = (
+            priminig_examples + clean_prompt + ". " + query
+            if few_shot
+            else clean_prompt + ". " + query
+        )
+
+        prompts.append(prompt)
+        labels.append(tokenizer.encode(random_object.lower())[1])
         all_objects = [random_object if obj == object else obj for obj in all_objects]
         all_object_tokens.append([tokenizer.encode(obj)[1] for obj in all_objects])
 
@@ -66,10 +91,17 @@ def object_alignment_example_generator(tokenizer, num_samples, data_file, object
 
 
 def object_alignment_example_sampler(
-    tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops=None
+    tokenizer,
+    num_samples,
+    data_file,
+    architecture,
+    object_file,
+    num_ents_or_ops,
+    few_shot,
+    alt_examples,
 ):
     input_ids, last_token_indices, output_ids, object_ids = object_alignment_example_generator(
-        tokenizer, num_samples, data_file, object_file
+        tokenizer, num_samples, data_file, object_file, few_shot, alt_examples
     )
 
     all_base_input_ids = []
