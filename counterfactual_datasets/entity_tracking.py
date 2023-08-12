@@ -153,7 +153,7 @@ def entity_tracking_example_sampler(
             segment.split(" ")[object_index_in_segment].lower()
             for segment in data[i]["sentence"].split(".")[0].split(", ")
         ]
-        incorrect_objects.remove(label)
+        incorrect_objects.remove(label.lower())
         incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
 
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
@@ -187,9 +187,16 @@ def entity_tracking_example_sampler(
     return input_ids, last_token_indices, output_ids, incorrect_object_tokens
 
 
-def box_index_aligner_examples(tokenizer, num_samples, data_file, num_ents_or_ops, architecture):
-    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
-        tokenizer, num_samples, data_file, architecture
+def box_index_aligner_examples(
+    tokenizer, num_samples, data_file, num_ents_or_ops, architecture, few_shot, alt_examples
+):
+    (
+        input_ids,
+        last_token_indices,
+        output_ids,
+        incorrect_object_tokens,
+    ) = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
     )
 
     all_base_input_ids = []
