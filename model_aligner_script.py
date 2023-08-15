@@ -57,7 +57,7 @@ def load_data(
         num_ents_or_ops=num_ents_or_ops,
         architecture=architecture,
         object_file=object_file,
-        few_shot=True,
+        few_shot=alt_examples,
         alt_examples=alt_examples,
     )
 

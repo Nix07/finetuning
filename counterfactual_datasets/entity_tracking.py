@@ -5,6 +5,77 @@ import pandas as pd
 import numpy as np
 
 
+def change_box_label(
+    tokenizer,
+    num_samples,
+    data_file,
+    object_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    prompts, labels = [], []
+
+    for i in range(num_samples):
+        org_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        prompts.append(org_prompt)
+        label = data[i]["sentence"].split(" ")[-1][:-1]
+        labels.append(tokenizer.encode(label)[1])
+
+        new_prompt = org_prompt.replace(" 0", " 6")
+        new_prompt = new_prompt.replace(" 1", " 4")
+        new_prompt = new_prompt.replace(" 2", " 9")
+        prompts.append(new_prompt)
+        labels.append(tokenizer.encode(label)[1])
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    input_ids = input_tokens["input_ids"].tolist()
+    last_token_indices = last_token_indices.tolist()
+    output_ids = labels
+
+    return input_ids, last_token_indices, output_ids
+
+
+def shift_box_positions(
+    tokenizer, num_samples, data_file, object_file, num_boxes, few_shot, alt_examples
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    prompts, labels = [], []
+
+    for i in range(num_samples):
+        org_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        prompts.append(org_prompt)
+        label = data[i]["sentence"].split(" ")[-1][:-1]
+        labels.append(tokenizer.encode(label)[1])
+
+        query = org_prompt.split(". ")[-1]
+        clean_prompt = org_prompt.split(". ")[0]
+        clean_prompt = clean_prompt.split(", ")
+        new_prompt = []
+        for seg_idx in range(len(clean_prompt)):
+            new_prompt.append(clean_prompt[(seg_idx + 1) % num_boxes])
+        new_prompt = ", ".join(new_prompt)
+        prompts.append(new_prompt + ". " + query)
+        labels.append(tokenizer.encode(label)[1])
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    input_ids = input_tokens["input_ids"].tolist()
+    last_token_indices = last_token_indices.tolist()
+    output_ids = labels
+
+    return input_ids, last_token_indices, output_ids
+
+
 def object_alignment_example_generator(
     tokenizer, num_samples, data_file, object_file, few_shot, alt_examples
 ):
@@ -74,20 +145,101 @@ def object_alignment_example_generator(
 
     input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
     last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
-    output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
+    output_ids = torch.tensor(labels)
 
-    for bi in range(len(last_token_indices)):
-        if bi % 2 == 0:
-            output_ids[bi, last_token_indices[bi]] = torch.tensor(labels[bi])
-        else:
-            # For random object example, the output should be at the last token index of the original example
-            output_ids[bi, last_token_indices[bi - 1]] = torch.tensor(labels[bi])
+    # output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
+
+    # for bi in range(len(last_token_indices)):
+    #     if bi % 2 == 0:
+    #         output_ids[bi, last_token_indices[bi]] = torch.tensor(labels[bi])
+    #     else:
+    #         # For random object example, the output should be at the last token index of the original example
+    #         output_ids[bi, last_token_indices[bi - 1]] = torch.tensor(labels[bi])
 
     input_ids = input_tokens["input_ids"].tolist()
     last_token_indices = last_token_indices.tolist()
     output_ids = output_ids.tolist()
 
     return input_ids, last_token_indices, output_ids, all_object_tokens
+
+
+def change_query_box_pos(
+    tokenizer,
+    num_samples,
+    data_file,
+    object_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
+):
+    input_ids, last_token_indices, output_ids = change_box_label(
+        tokenizer,
+        num_samples,
+        data_file,
+        object_file,
+        num_ents_or_ops,
+        architecture,
+        few_shot,
+        alt_examples,
+    )
+
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+
+    for i in range(0, num_samples, 2):
+        all_base_input_ids += [input_ids[i]]
+        all_base_input_last_pos += [last_token_indices[i]]
+        all_source_input_ids += [input_ids[i + 1]]
+        all_source_input_last_pos += [last_token_indices[i + 1]]
+        all_ctf_output_ids += [output_ids[i]]
+
+    return (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+    )
+
+
+def shift_query_position_example_sampler(
+    tokenizer,
+    num_samples,
+    data_file,
+    object_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
+):
+    input_ids, last_token_indices, output_ids = shift_box_positions(
+        tokenizer, num_samples, data_file, object_file, num_ents_or_ops, few_shot, alt_examples
+    )
+
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+
+    for i in range(0, num_samples, 2):
+        all_base_input_ids += [input_ids[i]]
+        all_base_input_last_pos += [last_token_indices[i]]
+        all_source_input_ids += [input_ids[i + 1]]
+        all_source_input_last_pos += [last_token_indices[i + 1]]
+        all_ctf_output_ids += [output_ids[i]]
+
+    return (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+    )
 
 
 def object_alignment_example_sampler(
@@ -100,6 +252,7 @@ def object_alignment_example_sampler(
     few_shot,
     alt_examples,
 ):
+    num_samples = 2 * num_samples
     input_ids, last_token_indices, output_ids, object_ids = object_alignment_example_generator(
         tokenizer, num_samples, data_file, object_file, few_shot, alt_examples
     )
@@ -177,8 +330,9 @@ def entity_tracking_example_sampler(
 
     input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
     last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
-    output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
-    output_ids[torch.arange(len(last_token_indices)), last_token_indices] = torch.tensor(labels)
+    # output_ids = torch.ones_like(input_tokens["input_ids"]) * -100
+    # output_ids[torch.arange(len(last_token_indices)), last_token_indices] = torch.tensor(labels)
+    output_ids = torch.tensor(labels)
 
     input_ids = input_tokens["input_ids"].tolist()
     last_token_indices = last_token_indices.tolist()
