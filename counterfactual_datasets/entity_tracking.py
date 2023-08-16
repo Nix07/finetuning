@@ -301,7 +301,7 @@ def entity_tracking_example_sampler(
 
     for i in range(num_samples):
         label = data[i]["sentence"].split(" ")[-1][:-1]
-        object_index_in_segment = 0 if alt_examples else 3
+        object_index_in_segment = 1 if alt_examples else 4
         incorrect_objects = [
             segment.split(" ")[object_index_in_segment].lower()
             for segment in data[i]["sentence"].split(".")[0].split(", ")
@@ -372,11 +372,7 @@ def box_index_aligner_examples(
 
             temp = []
             for ind in range(1, num_ents_or_ops):
-                temp += [
-                    output_ids[i + ((j + ind) % num_ents_or_ops)][
-                        last_token_indices[i + ((j + ind) % num_ents_or_ops)]
-                    ]
-                ]
+                temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
             all_incorrect_output_ids += [temp]
 
             random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
