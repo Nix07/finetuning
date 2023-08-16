@@ -301,13 +301,13 @@ def entity_tracking_example_sampler(
 
     for i in range(num_samples):
         label = data[i]["sentence"].split(" ")[-1][:-1]
-        object_index_in_segment = 1 if alt_examples else 4
-        incorrect_objects = [
-            segment.split(" ")[object_index_in_segment].lower()
-            for segment in data[i]["sentence"].split(".")[0].split(", ")
-        ]
-        incorrect_objects.remove(label.lower())
-        incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
+        # object_index_in_segment = 1 if alt_examples else 4
+        # incorrect_objects = [
+        #     segment.split(" ")[object_index_in_segment].lower()
+        #     for segment in data[i]["sentence"].split(".")[0].split(", ")
+        # ]
+        # incorrect_objects.remove(label.lower())
+        # incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
 
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
         if few_shot:
@@ -338,7 +338,7 @@ def entity_tracking_example_sampler(
     last_token_indices = last_token_indices.tolist()
     output_ids = output_ids.tolist()
 
-    return input_ids, last_token_indices, output_ids, incorrect_object_tokens
+    return input_ids, last_token_indices, output_ids
 
 
 def box_index_aligner_examples(
