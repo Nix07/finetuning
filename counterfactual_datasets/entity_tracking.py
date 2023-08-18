@@ -217,7 +217,13 @@ def shift_query_position_example_sampler(
     alt_examples,
 ):
     input_ids, last_token_indices, output_ids = shift_box_positions(
-        tokenizer, num_samples, data_file, object_file, num_ents_or_ops, few_shot, alt_examples
+        tokenizer,
+        num_samples,
+        data_file,
+        object_file,
+        num_ents_or_ops,
+        few_shot,
+        alt_examples,
     )
 
     all_base_input_ids = []
@@ -253,7 +259,12 @@ def object_alignment_example_sampler(
     alt_examples,
 ):
     num_samples = 2 * num_samples
-    input_ids, last_token_indices, output_ids, object_ids = object_alignment_example_generator(
+    (
+        input_ids,
+        last_token_indices,
+        output_ids,
+        object_ids,
+    ) = object_alignment_example_generator(
         tokenizer, num_samples, data_file, object_file, few_shot, alt_examples
     )
 
@@ -294,24 +305,26 @@ def entity_tracking_example_sampler(
     assert num_samples <= len(data)
     prompts, incorrect_object_tokens, labels = [], [], []
 
-    if alt_examples:
-        priminig_examples = """Watch is in Box 0, nothing is in Box 1, bottle is in Box 2. Box 2 contains bottle.\n Wire is in Box 0, biscotti is in Box 1, camera is in Box 2. Box 1 contains biscotti.\n Nothing is in Box 0, tetrapod is in Box 1, incense is in Box 2. Box 0 contains nothing.\n """
-    else:
-        priminig_examples = ""
+    # if alt_examples:
+    #     priminig_examples = """Watch is in Box 0, nothing is in Box 1, bottle is in Box 2. Box 2 contains bottle.\n Wire is in Box 0, biscotti is in Box 1, camera is in Box 2. Box 1 contains biscotti.\n Nothing is in Box 0, tetrapod is in Box 1, incense is in Box 2. Box 0 contains nothing.\n """
+    # else:
+    #     priminig_examples = ""
 
     for i in range(num_samples):
         label = data[i]["sentence"].split(" ")[-1][:-1]
-        # object_index_in_segment = 1 if alt_examples else 4
-        # incorrect_objects = [
-        #     segment.split(" ")[object_index_in_segment].lower()
-        #     for segment in data[i]["sentence"].split(".")[0].split(", ")
-        # ]
-        # incorrect_objects.remove(label.lower())
-        # incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
+        object_index_in_segment = 1 if alt_examples else 4
+        incorrect_objects = [
+            segment.split(" ")[object_index_in_segment].lower()
+            for segment in data[i]["sentence"].split(".")[0].split(", ")
+        ]
+        incorrect_objects.remove(label.lower())
+        incorrect_object_tokens.append(
+            [tokenizer.encode(obj)[1] for obj in incorrect_objects]
+        )
 
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
-        if few_shot:
-            prompt = priminig_examples + prompt
+        # if few_shot:
+        #     prompt = priminig_examples + prompt
 
         prompts.append(prompt)
 
@@ -341,14 +354,63 @@ def entity_tracking_example_sampler(
     return input_ids, last_token_indices, output_ids
 
 
+def random_label_samples_for_path_patching(
+    tokenizer,
+    num_samples,
+    data_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
+):
+    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
+    )
+
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+
+    for i in range(0, num_samples, num_ents_or_ops):
+        for j in range(num_ents_or_ops):
+            if i + j >= num_samples:
+                break
+
+            all_base_input_ids += [input_ids[i + j]]
+            all_base_input_last_pos += [last_token_indices[i + j]]
+            all_ctf_output_ids += [output_ids[i + j]]
+
+            random_source_index = random.choice(
+                list(range(0, num_samples, num_ents_or_ops))
+            )
+            random_source_index += (j + 1) % num_ents_or_ops
+            all_source_input_ids += [input_ids[random_source_index]]
+            all_source_input_last_pos += [last_token_indices[random_source_index]]
+
+    return (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+    )
+
+
 def box_index_aligner_examples(
-    tokenizer, num_samples, data_file, num_ents_or_ops, architecture, few_shot, alt_examples
+    tokenizer,
+    num_samples,
+    data_file,
+    num_ents_or_ops,
+    architecture,
+    few_shot,
+    alt_examples,
 ):
     (
         input_ids,
         last_token_indices,
         output_ids,
-        incorrect_object_tokens,
     ) = entity_tracking_example_sampler(
         tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
     )
@@ -375,7 +437,9 @@ def box_index_aligner_examples(
                 temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
             all_incorrect_output_ids += [temp]
 
-            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
+            random_source_index = random.choice(
+                list(range(0, num_samples, num_ents_or_ops))
+            )
             random_source_index += (j + 1) % num_ents_or_ops
             source_example = input_ids[random_source_index].copy()
 
@@ -395,9 +459,12 @@ def box_index_aligner_examples(
                 .item(),
             }
             for old_index, new_token in random_box.items():
-                old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[0, -1]
+                old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[
+                    0, -1
+                ]
                 source_example = [
-                    new_token if (token == old_token) else token for token in source_example
+                    new_token if (token == old_token) else token
+                    for token in source_example
                 ]
 
             all_source_input_ids += [source_example]
@@ -451,9 +518,9 @@ def modified_box_name_alignment_example_sampler(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_exp_objects += [incorrect_object_ids[i + j]]
 
-            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
-                (j + 1) % num_ents_or_ops
-            )
+            random_source_index = random.choice(
+                range(0, num_samples, num_ents_or_ops)
+            ) + ((j + 1) % num_ents_or_ops)
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 
