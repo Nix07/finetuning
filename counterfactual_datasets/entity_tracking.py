@@ -318,9 +318,7 @@ def entity_tracking_example_sampler(
             for segment in data[i]["sentence"].split(".")[0].split(", ")
         ]
         incorrect_objects.remove(label.lower())
-        incorrect_object_tokens.append(
-            [tokenizer.encode(obj)[1] for obj in incorrect_objects]
-        )
+        incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
 
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
         # if few_shot:
@@ -382,12 +380,57 @@ def random_label_samples_for_path_patching(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_ctf_output_ids += [output_ids[i + j]]
 
-            random_source_index = random.choice(
-                list(range(0, num_samples, num_ents_or_ops))
-            )
+            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
             random_source_index += (j + 1) % num_ents_or_ops
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
+
+    return (
+        all_base_input_ids,
+        all_base_input_last_pos,
+        all_source_input_ids,
+        all_source_input_last_pos,
+        all_ctf_output_ids,
+    )
+
+
+def different_format_samples(
+    tokenizer,
+    num_samples,
+    data_file_1,
+    data_file_2,
+    architecture,
+    few_shot,
+    alt_examples,
+):
+    (
+        clean_input_ids,
+        clean_last_token_indices,
+        clean_output_ids,
+    ) = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file_1, architecture, few_shot, alt_examples
+    )
+
+    (
+        corrupt_input_ids,
+        corrupt_last_token_indices,
+        corrupt_output_ids,
+    ) = entity_tracking_example_sampler(
+        tokenizer, num_samples, data_file_2, architecture, few_shot, alt_examples
+    )
+
+    all_base_input_ids = []
+    all_base_input_last_pos = []
+    all_source_input_ids = []
+    all_source_input_last_pos = []
+    all_ctf_output_ids = []
+
+    for i in range(num_samples):
+        all_base_input_ids += [clean_input_ids[i]]
+        all_base_input_last_pos += [clean_last_token_indices[i]]
+        all_source_input_ids += [corrupt_input_ids[(i + 1) % num_samples]]
+        all_source_input_last_pos += [corrupt_last_token_indices[(i + 1) % num_samples]]
+        all_ctf_output_ids += [clean_output_ids[i]]
 
     return (
         all_base_input_ids,
@@ -437,35 +480,33 @@ def box_index_aligner_examples(
                 temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
             all_incorrect_output_ids += [temp]
 
-            random_source_index = random.choice(
-                list(range(0, num_samples, num_ents_or_ops))
-            )
+            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
             random_source_index += (j + 1) % num_ents_or_ops
             source_example = input_ids[random_source_index].copy()
 
             # Randomizing the box indices in the source example
-            random_box_indices = np.random.choice(
-                list(range(num_ents_or_ops, 10)), size=num_ents_or_ops, replace=False
-            )
-            random_box = {
-                0: tokenizer(str(random_box_indices[0]), return_tensors="pt")
-                .input_ids[0, -1]
-                .item(),
-                1: tokenizer(str(random_box_indices[1]), return_tensors="pt")
-                .input_ids[0, -1]
-                .item(),
-                2: tokenizer(str(random_box_indices[2]), return_tensors="pt")
-                .input_ids[0, -1]
-                .item(),
-            }
-            for old_index, new_token in random_box.items():
-                old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[
-                    0, -1
-                ]
-                source_example = [
-                    new_token if (token == old_token) else token
-                    for token in source_example
-                ]
+            # random_box_indices = np.random.choice(
+            #     list(range(num_ents_or_ops, 10)), size=num_ents_or_ops, replace=False
+            # )
+            # random_box = {
+            #     0: tokenizer(str(random_box_indices[0]), return_tensors="pt")
+            #     .input_ids[0, -1]
+            #     .item(),
+            #     1: tokenizer(str(random_box_indices[1]), return_tensors="pt")
+            #     .input_ids[0, -1]
+            #     .item(),
+            #     2: tokenizer(str(random_box_indices[2]), return_tensors="pt")
+            #     .input_ids[0, -1]
+            #     .item(),
+            # }
+            # for old_index, new_token in random_box.items():
+            #     old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[
+            #         0, -1
+            #     ]
+            #     source_example = [
+            #         new_token if (token == old_token) else token
+            #         for token in source_example
+            #     ]
 
             all_source_input_ids += [source_example]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
@@ -518,9 +559,9 @@ def modified_box_name_alignment_example_sampler(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_exp_objects += [incorrect_object_ids[i + j]]
 
-            random_source_index = random.choice(
-                range(0, num_samples, num_ents_or_ops)
-            ) + ((j + 1) % num_ents_or_ops)
+            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
+                (j + 1) % num_ents_or_ops
+            )
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 
