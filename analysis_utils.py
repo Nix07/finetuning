@@ -1,7 +1,8 @@
 import math
 import torch
-from einops import einsum
+from einops import einsum, rearrange
 from baukit import TraceDict
+from functools import partial
 
 
 def apply_causal_mask(attn_scores):
@@ -32,57 +33,105 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
     return q_embed, k_embed
 
 
-def get_attn_scores(model, tokens, layer):
+def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
+    """Zeroes out the activations of the specified head in the specified layer."""
+    input = inputs[0]
+    batch_size = input.shape[0]
+    layer_idx = int(layer.split(".")[2])
+
+    if "o_proj" in layer:
+        input = rearrange(
+            input,
+            "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+            n_heads=model.config.num_attention_heads,
+        )
+
+        ablation_heads_curr_layer = [h for l_idx, h in ablation_heads if l_idx == layer_idx]
+
+        for head in ablation_heads_curr_layer:
+            for bi in range(batch_size):
+                # print(layer_idx, head, last_token_pos[bi])
+                input[bi, last_token_pos[bi], head, :] = 0
+
+        input = rearrange(
+            input,
+            "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+            n_heads=model.config.num_attention_heads,
+        )
+        w_o = model.model.layers[layer_idx].self_attn.o_proj.weight
+        output = einsum(
+            input,
+            w_o,
+            "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model",
+        )
+
+    return output
+
+
+def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=None):
     modules = [
         [
             f"model.layers.{i}.self_attn.k_proj",
             f"model.layers.{i}.self_attn.q_proj",
             f"model.layers.{i}.self_attn.v_proj",
+            f"model.layers.{i}.self_attn.o_proj",
         ]
         for i in range(model.config.num_hidden_layers)
     ]
     modules = [item for sublist in modules for item in sublist]
 
     with torch.no_grad():
-        with TraceDict(model, modules) as residual:
-            model(tokens)
+        if ablation_heads is None:
+            with TraceDict(model, modules) as residual:
+                _ = model(tokens)
+        else:
+            with TraceDict(
+                model,
+                modules,
+                retain_input=True,
+                edit_output=partial(
+                    zero_ablation,
+                    ablation_heads=ablation_heads,
+                    last_token_pos=last_token_pos,
+                    model=model,
+                ),
+            ) as residual:
+                _ = model(tokens)
 
-        batch_size, seq_len = tokens.shape
-        n_heads = model.config.num_attention_heads
-        d_head = model.config.hidden_size // n_heads
+    batch_size, seq_len = tokens.shape
+    n_heads = model.config.num_attention_heads
+    d_head = model.config.hidden_size // n_heads
 
-        key = (
-            residual[f"model.layers.{layer}.self_attn.k_proj"]
-            .output.view(batch_size, seq_len, n_heads, d_head)
-            .transpose(1, 2)
-        )
-        query = (
-            residual[f"model.layers.{layer}.self_attn.q_proj"]
-            .output.view(batch_size, seq_len, n_heads, d_head)
-            .transpose(1, 2)
-        )
-        value = (
-            residual[f"model.layers.{layer}.self_attn.v_proj"]
-            .output.view(batch_size, seq_len, n_heads, d_head)
-            .transpose(1, 2)
-        )
+    key = (
+        residual[f"model.layers.{layer}.self_attn.k_proj"]
+        .output.view(batch_size, seq_len, n_heads, d_head)
+        .transpose(1, 2)
+    )
+    query = (
+        residual[f"model.layers.{layer}.self_attn.q_proj"]
+        .output.view(batch_size, seq_len, n_heads, d_head)
+        .transpose(1, 2)
+    )
+    value = residual[f"model.layers.{layer}.self_attn.v_proj"].output.view(
+        batch_size, seq_len, n_heads, d_head
+    )
 
-        kv_seq_len = key.shape[-2]
-        cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
-        positions = [i for i in range(seq_len)]
-        positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
-        query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
+    kv_seq_len = key.shape[-2]
+    cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
+    positions = [i for i in range(seq_len)]
+    positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
+    query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
 
-        attn_scores = einsum(
-            key,
-            query,
-            "batch n_heads key_pos d_head, batch n_heads query_pos d_head -> batch n_heads query_pos key_pos",
-        )
-        attn_scores = attn_scores / math.sqrt(d_head)
-        attn_scores = apply_causal_mask(attn_scores)
-        attn_scores = torch.softmax(attn_scores, dim=-1)
+    attn_scores = einsum(
+        key,
+        query,
+        "batch n_heads key_pos d_head, batch n_heads query_pos d_head -> batch n_heads query_pos key_pos",
+    )
+    attn_scores = attn_scores / math.sqrt(d_head)
+    attn_scores = apply_causal_mask(attn_scores)
+    attn_scores = torch.softmax(attn_scores, dim=-1)
 
-    return attn_scores
+    return attn_scores, value
 
 
 def perf_metric(
