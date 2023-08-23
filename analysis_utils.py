@@ -50,7 +50,6 @@ def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
 
         for head in ablation_heads_curr_layer:
             for bi in range(batch_size):
-                # print(layer_idx, head, last_token_pos[bi])
                 input[bi, last_token_pos[bi], head, :] = 0
 
         input = rearrange(
