@@ -269,6 +269,7 @@ def correct_object_position_fetcher_desiderata(
                 break
 
             random_source_index = random.choice(list(range(0, num_samples, num_boxes)))
+            random_source_index += j % num_boxes
             source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
             source_box_label = source_prompt.split(". ")[-1].split(" ")[1]
             source_prompts.append(source_prompt)
@@ -327,7 +328,7 @@ def box_label_value_fetcher_desiderata(
             label = data[i + j]["sentence"].split(" ")[-1][:-1]
             base_labels.append(tokenizer.encode(label)[1])
 
-            prompt = " ".join(data[i + (j + 1 % num_boxes)]["sentence"].split(" ")[:-2])
+            prompt = " ".join(data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[:-2])
             context = prompt.split(". ")[0]
             query = prompt.split(". ")[-1]
             box_label = query.split(" ")[1]
@@ -338,14 +339,17 @@ def box_label_value_fetcher_desiderata(
                 random_objects = random.sample(objects["object_name"].tolist(), 3)
 
             for idx in range(len(context_segs)):
-                context_segs[idx] = context_segs[idx].split(" ")[:-1] + [random_objects[idx]]
+                if box_label in context_segs[idx].split(" "):
+                    context_segs[idx] = context_segs[idx].split(" ")[:-2] + [random_objects[idx]]
+                else:
+                    context_segs[idx] = context_segs[idx].split(" ")[:-2] + [random_objects[idx]]
                 context_segs[idx] = " ".join(context_segs[idx])
 
             context = ", ".join(context_segs)
             prompt = context + ". The " + query
 
             source_prompts.append(prompt)
-            label = data[i + (j + 1 % num_boxes)]["sentence"].split(" ")[-1][:-1]
+            label = data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[-1][:-1]
             source_labels.append(tokenizer.encode(label)[1])
 
     base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
