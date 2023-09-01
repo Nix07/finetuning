@@ -254,6 +254,7 @@ def correct_object_position_fetcher_desiderata(
     data_file,
     object_file,
     num_boxes,
+    alt_format=False,
 ):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
@@ -310,6 +311,7 @@ def box_label_value_fetcher_desiderata(
     data_file,
     object_file,
     num_boxes,
+    alt_format=False,
 ):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
@@ -340,9 +342,31 @@ def box_label_value_fetcher_desiderata(
 
             for idx in range(len(context_segs)):
                 if box_label in context_segs[idx].split(" "):
-                    context_segs[idx] = context_segs[idx].split(" ")[:-2] + [random_objects[idx]]
+                    if alt_format:
+                        # Remove "the" from the start of the sentence and add " contained"
+                        context_segs[idx] = (
+                            [random_objects[idx]]
+                            + context_segs[idx].split(" ")[2:3]
+                            + ["contained"]
+                            + context_segs[idx].split(" ")[3:]
+                        )
+                    else:
+                        # Remove "the" located just before the object
+                        context_segs[idx] = context_segs[idx].split(" ")[:-2] + [
+                            random_objects[idx]
+                        ]
                 else:
-                    context_segs[idx] = context_segs[idx].split(" ")[:-2] + [random_objects[idx]]
+                    if alt_format:
+                        context_segs[idx] = (
+                            context_segs[idx].split(" ")[:1]
+                            + [random_objects[idx]]
+                            + context_segs[idx].split(" ")[2:]
+                        )
+                    else:
+                        context_segs[idx] = context_segs[idx].split(" ")[:-1] + [
+                            random_objects[idx]
+                        ]
+
                 context_segs[idx] = " ".join(context_segs[idx])
 
             context = ", ".join(context_segs)
@@ -377,6 +401,7 @@ def correct_obj_value_fetcher_desiderata(
     num_samples,
     data_file,
     num_boxes,
+    alt_format=False,
 ):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
@@ -400,11 +425,13 @@ def correct_obj_value_fetcher_desiderata(
             context = prompt.split(". ")[0]
             query = prompt.split(". ")[-1]
             box_label = query.split(" ")[1]
-            context_segs = context.split(", ")
+            context_segs = context.split(",")
             for idx in range(len(context_segs)):
                 if box_label in context_segs[idx].split(" "):
                     context_segs[idx] = context_segs[idx].replace(" the", "")
-            context = ", ".join(context_segs)
+                    if alt_format:
+                        context_segs[idx] = context_segs[idx].replace(" in", " contained in")
+            context = ",".join(context_segs)
             prompt = context + ". " + query
 
             source_prompts.append(prompt)
