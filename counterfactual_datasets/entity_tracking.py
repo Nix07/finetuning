@@ -405,18 +405,21 @@ def box_label_value_fetcher_desiderata(
     )
 
 
-def correct_obj_value_fetcher_desiderata(
+def correct_obj_value_fetcher_desiderata_2(
     tokenizer,
     num_samples,
     data_file,
     num_boxes,
+    object_file,
     alt_format=False,
 ):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
 
+    objects = pd.read_csv(object_file)
+
     assert num_samples <= len(data)
-    base_prompts, source_prompts, base_labels, source_labels = [], [], [], []
+    base_prompts, source_prompts, source_labels = [], [], []
 
     for i in range(0, num_samples, num_boxes):
         for j in range(num_boxes):
@@ -425,23 +428,85 @@ def correct_obj_value_fetcher_desiderata(
             prompt = " ".join(data[i + j]["sentence"].split(" ")[:-1])
             base_prompts.append(prompt)
             label = data[i + j]["sentence"].split(" ")[-1][:-1]
-            base_labels.append(tokenizer.encode(label)[1])
+
+            random_object = random.choice(objects["object_name"].tolist())
+
+            box_label = prompt.split(". ")[-1].split(" ")[1]
+            context_segments = prompt.split(". ")[0].split(", ")
+            for idx in range(len(context_segments)):
+                if box_label in context_segments[idx].split(" "):
+                    context_segments[idx] = context_segments[idx].replace(label, random_object)
+
+            context = ", ".join(context_segments)
+            prompt = context + ". " + prompt.split(". ")[-1]
+            source_prompts.append(prompt)
+            source_labels.append(tokenizer.encode(random_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(source_labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def correct_obj_value_fetcher_desiderata_1(
+    tokenizer,
+    num_samples,
+    data_file,
+    num_boxes,
+    object_file,
+    alt_format=False,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    objects = pd.read_csv(object_file)
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, source_labels = [], [], []
+
+    for i in range(0, num_samples, num_boxes):
+        for j in range(num_boxes):
+            if i + j >= num_samples:
+                break
+            prompt = " ".join(data[i + j]["sentence"].split(" ")[:-1])
+            base_prompts.append(prompt)
+            label = data[i + j]["sentence"].split(" ")[-1][:-1]
+
+            random_object = random.choice(objects["object_name"].tolist())
 
             random_data_index = random.choice(list(range(0, num_samples, num_boxes)))
             random_data_index += (j + 1) % num_boxes
             prompt = " ".join(data[random_data_index]["sentence"].split(" ")[:-1])
+            if alt_format:
+                prompt = prompt.replace(" in", " contained in")
+            else:
+                prompt = prompt.replace(" the", "")
 
-            context = prompt.split(". ")[0]
-            query = prompt.split(". ")[-1]
-            box_label = query.split(" ")[1]
-            context_segs = context.split(",")
-            for idx in range(len(context_segs)):
-                if box_label in context_segs[idx].split(" "):
-                    context_segs[idx] = context_segs[idx].replace(" the", "")
-                    if alt_format:
-                        context_segs[idx] = context_segs[idx].replace(" in", " contained in")
-            context = ",".join(context_segs)
-            prompt = context + ". " + query
+            # context = prompt.split(". ")[0]
+            # query = prompt.split(". ")[-1]
+            # box_label = query.split(" ")[1]
+            # context_segs = context.split(",")
+            # for idx in range(len(context_segs)):
+            #     if box_label in context_segs[idx].split(" "):
+            #         context_segs[idx] = context_segs[idx].replace(" the", "")
+            #         if alt_format:
+            #             context_segs[idx] = context_segs[idx].replace(" in", " contained in")
+            # context = ",".join(context_segs)
+            # prompt = context + ". " + query
 
             source_prompts.append(prompt)
             label = data[random_data_index]["sentence"].split(" ")[-1][:-1]
