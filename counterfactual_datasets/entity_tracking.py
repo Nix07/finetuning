@@ -273,6 +273,15 @@ def correct_object_position_fetcher_desiderata(
             random_source_index += j % num_boxes
             source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
             source_box_label = source_prompt.split(". ")[-1].split(" ")[1]
+
+            # if alt_format:
+            #     source_segments = source_prompt.split(". ")[0].split(", ")
+            #     for segment_idx in range(len(source_segments)):
+            #         if source_box_label in source_segments[segment_idx].split(" "):
+            #             source_segments[segment_idx] = source_segments[segment_idx].replace(
+            #                 " in", " contained in"
+            #             )
+            #     source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
             source_prompts.append(source_prompt)
 
             base_prompt = " ".join(data[i + j]["sentence"].split(" ")[:-1])
