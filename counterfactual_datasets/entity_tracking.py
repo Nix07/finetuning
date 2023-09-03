@@ -273,15 +273,32 @@ def correct_object_position_fetcher_desiderata(
             random_source_index += j % num_boxes
             source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
             source_box_label = source_prompt.split(". ")[-1].split(" ")[1]
+            # generate a random english alphabet
+            # random_alphabet = chr(random.randint(97, 122))
+            # source_prompt = source_prompt.replace(source_box_label, random_alphabet)
 
-            # if alt_format:
-            #     source_segments = source_prompt.split(". ")[0].split(", ")
-            #     for segment_idx in range(len(source_segments)):
-            #         if source_box_label in source_segments[segment_idx].split(" "):
-            #             source_segments[segment_idx] = source_segments[segment_idx].replace(
-            #                 " in", " contained in"
-            #             )
-            #     source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+            if alt_format:
+                source_segments = source_prompt.split(". ")[0].split(", ")
+                for segment_idx in range(len(source_segments)):
+                    if source_box_label in source_segments[segment_idx].split(" "):
+                        source_segments[segment_idx] = source_segments[segment_idx].replace(
+                            " in", " contained in"
+                        )
+                        source_segments[segment_idx] = source_segments[segment_idx].replace(
+                            "the ", ""
+                        )
+                        source_segments[segment_idx] = source_segments[segment_idx].replace(
+                            "The ", ""
+                        )
+                        if segment_idx == 0:
+                            source_segments[segment_idx] = (
+                                source_segments[segment_idx][0].upper()
+                                + source_segments[segment_idx][1:]
+                            )
+
+                source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+
+            source_prompt = source_prompt.split(". ")[0] + ". The " + source_prompt.split(". ")[-1]
             source_prompts.append(source_prompt)
 
             base_prompt = " ".join(data[i + j]["sentence"].split(" ")[:-1])
@@ -291,7 +308,7 @@ def correct_object_position_fetcher_desiderata(
             base_prompt = base_prompt.split(". ")[0] + ". " + base_query
 
             base_prompts.append(base_prompt)
-            label = data[i + j]["sentence"].split(" ")[-1][:-1]
+            label = data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[-1][:-1]
             base_labels.append(tokenizer.encode(label)[1])
 
     base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
