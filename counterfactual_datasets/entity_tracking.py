@@ -281,15 +281,20 @@ def correct_object_position_fetcher_desiderata(
                 source_segments = source_prompt.split(". ")[0].split(", ")
                 for segment_idx in range(len(source_segments)):
                     if source_box_label in source_segments[segment_idx].split(" "):
-                        source_segments[segment_idx] = source_segments[segment_idx].replace(
-                            " in", " contained in"
-                        )
-                        source_segments[segment_idx] = source_segments[segment_idx].replace(
-                            "the ", ""
-                        )
-                        source_segments[segment_idx] = source_segments[segment_idx].replace(
-                            "The ", ""
-                        )
+                        correct_object = source_segments[segment_idx].split(" ")[1]
+                        source_segments[
+                            segment_idx
+                        ] = f"the {correct_object} is in Box labeled {source_box_label}"
+                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                        #     " in", " contained in"
+                        # )
+                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                        #     "the ", ""
+                        # )
+                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                        #     "The ", ""
+                        # )
+                        # source_segments[segment_idx] += " which is on the table"
                         if segment_idx == 0:
                             source_segments[segment_idx] = (
                                 source_segments[segment_idx][0].upper()
@@ -308,7 +313,7 @@ def correct_object_position_fetcher_desiderata(
             base_prompt = base_prompt.split(". ")[0] + ". " + base_query
 
             base_prompts.append(base_prompt)
-            label = data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[-1][:-1]
+            label = data[i + ((j) % num_boxes)]["sentence"].split(" ")[-1][:-1]
             base_labels.append(tokenizer.encode(label)[1])
 
     base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
