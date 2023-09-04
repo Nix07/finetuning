@@ -273,43 +273,66 @@ def correct_object_position_fetcher_desiderata(
             random_source_index += j % num_boxes
             source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
             source_box_label = source_prompt.split(". ")[-1].split(" ")[1]
-            # generate a random english alphabet
-            # random_alphabet = chr(random.randint(97, 122))
+            # generate a random english alphabet in upper case
+            random_alphabet = chr(random.randint(65, 90))
+            random_box_label = random_alphabet
+            while random_alphabet == random_box_label:
+                random_box_label = chr(random.randint(65, 90))
             # source_prompt = source_prompt.replace(source_box_label, random_alphabet)
 
+            source_segments = source_prompt.split(". ")[0].split(", ")
+
             if alt_format:
-                source_segments = source_prompt.split(". ")[0].split(", ")
-                for segment_idx in range(len(source_segments)):
-                    if source_box_label in source_segments[segment_idx].split(" "):
-                        correct_object = source_segments[segment_idx].split(" ")[1]
-                        source_segments[
-                            segment_idx
-                        ] = f"the {correct_object} is in Box labeled {source_box_label}"
-                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
-                        #     " in", " contained in"
-                        # )
-                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
-                        #     "the ", ""
-                        # )
-                        # source_segments[segment_idx] = source_segments[segment_idx].replace(
-                        #     "The ", ""
-                        # )
-                        # source_segments[segment_idx] += " which is on the table"
-                        if segment_idx == 0:
-                            source_segments[segment_idx] = (
-                                source_segments[segment_idx][0].upper()
-                                + source_segments[segment_idx][1:]
-                            )
+                pass
+                # for segment_idx in range(len(source_segments)):
+                #     if source_box_label in source_segments[segment_idx].split(" "):
+                #         correct_object = source_segments[segment_idx].split(" ")[1]
+                # source_segments[segment_idx] = f"the table has Box {source_box_label}"
+                # source_segments[
+                #     segment_idx
+                # ] = f"Box {source_box_label} contains the {correct_object}"
+                # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                #     " in", " contained in"
+                # )
+                # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                #     "the ", ""
+                # )
+                # source_segments[segment_idx] = source_segments[segment_idx].replace(
+                #     "The ", ""
+                # )
+                # source_segments[segment_idx] += " which is on the table"
+                # if segment_idx == 0:
+                #     source_segments[segment_idx] = (
+                #         source_segments[segment_idx][0].upper()
+                #         + source_segments[segment_idx][1:]
+                #     )
 
-                source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+            else:
+                pass
+                # for segment_idx in range(len(source_segments)):
+                #     if source_box_label in source_segments[segment_idx].split(" "):
+                #         correct_object = source_segments[segment_idx].split(" ")[-1]
+                #         source_segments[
+                #             segment_idx
+                #         ] = f"the {correct_object} is in Box {source_box_label}"
 
-            source_prompt = source_prompt.split(". ")[0] + ". The " + source_prompt.split(". ")[-1]
+                #     if segment_idx == 0:
+                #         source_segments[segment_idx] = (
+                #             source_segments[segment_idx][0].upper()
+                #             + source_segments[segment_idx][1:]
+                #         )
+
+            source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+
+            # source_prompt = source_prompt.split(". ")[0] + ". The " + source_prompt.split(". ")[-1]
+            # source_prompt = source_prompt.replace(", ", " ")
+            source_prompt = "There are a bunch of boxes containing objects. " + source_prompt
             source_prompts.append(source_prompt)
 
             base_prompt = " ".join(data[i + j]["sentence"].split(" ")[:-1])
             base_query = base_prompt.split(". ")[-1]
             base_query_box_label = base_query.split(" ")[1]
-            base_query = base_query.replace(base_query_box_label, source_box_label)
+            base_query = base_query.replace(base_query_box_label, random_alphabet)
             base_prompt = base_prompt.split(". ")[0] + ". " + base_query
 
             base_prompts.append(base_prompt)
