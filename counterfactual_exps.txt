@@ -4,6 +4,7 @@ The fig is in Box X, the engine is in Box T, the radio is in Box A. Box N contai
 The engine is in Box S, the machine is in Box L, the brain is in Box I. Box I contains the
 radio
 77%
+rel_pos=2; 
 
 Comma doesn't matter
 The fig is in Box X, the engine is in Box T, the radio is in Box A. Box U contains the
@@ -37,6 +38,20 @@ There are a bunch of boxes containing objects. The camera is in Box X, the radio
 fig
 73%
 
+The fig is in Box X, the engine is in Box T, the radio is in Box A. Box Q contains the
+The drink is in Box O, the glass is in Box H, there are a bunch of boxes containing objects, the ball is in Box I. Box H contains the
+engine
+67.5%
+
+The fig is in Box X, the engine is in Box T, the radio is in Box A. Box P contains the
+The cup is in Box S, there is a Box Q on the table, the painting is in Box T. Box Q contains the
+engine
+42%
+
+The fig is in Box X, the engine is in Box T, the radio is in Box A. Box T contains the
+The computer is in Box T, the flower is on Box D, the leaf is in Box N. Box D contains the
+engine
+78%
 
 Forward setting:
 ---------------
@@ -53,7 +68,7 @@ television
 Box X contains the television, Box T contains the bell, Box A contains the machine. Box A contains the
 Box F contains the glass, the suit is in Box Z, Box X contains the block. Box Z contains the
 bell
-61%
+58%
 
 Box X contains the television, Box T contains the bell, Box A contains the machine. Box V contains the
 Box I contains the fish, Box O contains the wire, Box W contains the plant. Box O contains the
@@ -75,3 +90,17 @@ There are a bunch of boxes containing objects. Box W contains the radio, Box S c
 bell
 78%
 
+Box X contains the television, Box T contains the bell, Box A contains the machine. Box H contains the
+Box Z contains the game, there are a bunch of boxes containing objects, Box T contains the key, Box M contains the television. Box Z contains the
+television
+80%
+
+Box X contains the television, Box T contains the bell, Box A contains the machine. Box Y contains the
+There is a Box N on the table, Box Q contains the cross, Box C contains the medicine. Box N contains the
+television
+33%
+
+Box X contains the television, Box T contains the bell, Box A contains the machine. Box B contains the
+Box D contains the bread, Box W resides under the ring, Box P contains the wheel. Box W contains the
+bell
+64%
