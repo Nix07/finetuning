@@ -205,3 +205,11 @@ def top_token_comparison(eval_preds, eval_labels, incorrect_objects=None):
 
     accuracy = round(correct_count / total_count, 2)
     return {"accuracy": accuracy}
+
+
+def compute_prev_query_box_pos(input_ids, last_token_index):
+    query_box_token = input_ids[last_token_index - 2]
+    prev_query_box_token_pos = (
+        (input_ids[: last_token_index - 2] == query_box_token).nonzero().item()
+    )
+    return prev_query_box_token_pos
