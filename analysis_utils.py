@@ -211,5 +211,5 @@ def compute_prev_query_box_pos(input_ids, last_token_index):
     query_box_token = input_ids[last_token_index - 2]
     prev_query_box_token_pos = (
         (input_ids[: last_token_index - 2] == query_box_token).nonzero().item()
-    )
+    ) + 1
     return prev_query_box_token_pos
