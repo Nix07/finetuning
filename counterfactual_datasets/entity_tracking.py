@@ -4,6 +4,8 @@ import torch
 import pandas as pd
 import numpy as np
 
+random.seed(42)
+
 
 def change_box_label(
     tokenizer,

@@ -68,15 +68,26 @@ def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
 
 
 def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=None):
-    modules = [
-        [
-            f"model.layers.{i}.self_attn.k_proj",
-            f"model.layers.{i}.self_attn.q_proj",
-            f"model.layers.{i}.self_attn.v_proj",
-            f"model.layers.{i}.self_attn.o_proj",
+    if model.config.architectures[0] == "LlamaForCausalLM":
+        modules = [
+            [
+                f"model.layers.{i}.self_attn.k_proj",
+                f"model.layers.{i}.self_attn.q_proj",
+                f"model.layers.{i}.self_attn.v_proj",
+                f"model.layers.{i}.self_attn.o_proj",
+            ]
+            for i in range(model.config.num_hidden_layers)
         ]
-        for i in range(model.config.num_hidden_layers)
-    ]
+    else:
+        modules = [
+            [
+                f"base_model.model.model.layers.{i}.self_attn.k_proj",
+                f"base_model.model.model.layers.{i}.self_attn.q_proj",
+                f"base_model.model.model.layers.{i}.self_attn.v_proj",
+                f"base_model.model.model.layers.{i}.self_attn.o_proj",
+            ]
+            for i in range(model.config.num_hidden_layers)
+        ]
     modules = [item for sublist in modules for item in sublist]
 
     with torch.no_grad():
@@ -102,21 +113,23 @@ def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=No
     d_head = model.config.hidden_size // n_heads
 
     key = (
-        residual[f"model.layers.{layer}.self_attn.k_proj"]
+        residual[f"base_model.model.model.layers.{layer}.self_attn.k_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
     query = (
-        residual[f"model.layers.{layer}.self_attn.q_proj"]
+        residual[f"base_model.model.model.layers.{layer}.self_attn.q_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
-    value = residual[f"model.layers.{layer}.self_attn.v_proj"].output.view(
+    value = residual[f"base_model.model.model.layers.{layer}.self_attn.v_proj"].output.view(
         batch_size, seq_len, n_heads, d_head
     )
 
     kv_seq_len = key.shape[-2]
-    cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
+    cos, sin = model.base_model.model.model.layers[layer].self_attn.rotary_emb(
+        value, seq_len=kv_seq_len
+    )
     positions = [i for i in range(seq_len)]
     positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
     query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
@@ -211,5 +224,5 @@ def compute_prev_query_box_pos(input_ids, last_token_index):
     query_box_token = input_ids[last_token_index - 2]
     prev_query_box_token_pos = (
         (input_ids[: last_token_index - 2] == query_box_token).nonzero().item()
-    ) + 1
+    )
     return prev_query_box_token_pos
