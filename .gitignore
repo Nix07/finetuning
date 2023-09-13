@@ -11,7 +11,7 @@ notebooks/figures/
 results_notebook/
 logic_data/*.pkl
 wandb/
-cache_dump.pkl
+*.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
