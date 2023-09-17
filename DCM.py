@@ -1,6 +1,6 @@
 import os
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer, LlamaForCausalLM
 from baukit import TraceDict
 from einops import rearrange, einsum
 from tqdm import tqdm
@@ -13,16 +13,37 @@ import analysis_utils
 
 # from model_aligner_script import load_data
 from counterfactual_datasets.entity_tracking import *
+from peft import PeftModel
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(42)
 
 # %%
 print("Loading model...")
-path = "./llama_7b"
-tokenizer = AutoTokenizer.from_pretrained(path)
-model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
+# path = "./llama_7b"
+# tokenizer = AutoTokenizer.from_pretrained(path)
+# model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
+
+base_model = "decapoda-research/llama-7b-hf"
+lora_weights = "tiedong/goat-lora-7b"
+
+tokenizer = LlamaTokenizer.from_pretrained(
+    "hf-internal-testing/llama-tokenizer", padding_side="right"
+)
+model = LlamaForCausalLM.from_pretrained(
+    base_model,
+    load_in_8bit=False,
+    torch_dtype=torch.float32,
+    device_map="auto",
+)
+model = PeftModel.from_pretrained(
+    model,
+    lora_weights,
+    torch_dtype=torch.float32,
+    device_map={"": 0},
+)
 tokenizer.pad_token_id = tokenizer.eos_token_id
+
 
 model.eval()
 for param in model.parameters():
@@ -196,9 +217,9 @@ def edit_output(
 
 relative_pos = {
     "direct_logit_heads": 0,
-    "heads_affecting_direct_logit_heads": 0,
-    "head_at_query_box_token": 2,
-    "heads_at_prev_box_pos": -1,
+    "heads_affect_direct_logit": 0,
+    "heads_at_query_box_pos": 2,
+    "heads_at_prev_query_box_pos": -1,
 }
 
 for desideratum_name, desideratum_method in desiderata.items():
@@ -237,7 +258,10 @@ for desideratum_name, desideratum_method in desiderata.items():
         print(f"{desideratum_name}, {head_group_name} training started...")
         modules_w_heads = []
         for l, h in head_group:
-            modules_w_heads.append(f"model.layers.{l}.self_attn.o_proj.{h}")
+            if model.config.architectures[0] == "LlamaForCausalLM":
+                modules_w_heads.append(f"model.layers.{l}.self_attn.o_proj.{h}")
+            else:
+                modules_w_heads.append(f"base_model.model.model.layers.{l}.self_attn.o_proj.{h}")
 
         mask_dict = {module: i for i, module in enumerate(modules_w_heads)}
 
@@ -246,7 +270,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
-        save_path = f"./new_masks/{head_group_name}/{desideratum_name}/"
+        save_path = f"./new_masks/goat/{head_group_name}/{desideratum_name}/"
 
         # check if the path exists
         if not os.path.exists(save_path):
@@ -258,7 +282,7 @@ for desideratum_name, desideratum_method in desiderata.items():
             )
             optimizer = torch.optim.Adam([mask[lamb]], lr=1e-1)
             eval_acc = -np.inf
-            eval_heads = np.inf
+            eval_heads = -np.inf
 
             for epoch in range(epochs):
                 for di, desid_train in enumerate(desiderata_train):

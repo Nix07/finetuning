@@ -6,6 +6,8 @@ from functools import partial
 from collections import defaultdict
 import analysis_utils
 
+torch.manual_seed(42)
+
 
 def apply_causal_mask(attn_scores):
     ignore = torch.tensor(torch.finfo(attn_scores.dtype).min)
@@ -266,8 +268,18 @@ def get_circuit_components(model):
     for head in intersection:
         direct_logit_heads.remove(head)
 
+    print(
+        len(direct_logit_heads),
+        len(heads_affecting_direct_logit_heads),
+        len(head_at_query_box_token),
+        len(heads_at_prev_box_pos),
+    )
+
     head_groups = {
-        "heads_at_prev_box_pos": heads_at_prev_box_pos,
+        "direct_logit_heads": direct_logit_heads,
+        "heads_affect_direct_logit": heads_affecting_direct_logit_heads,
+        "heads_at_query_box_pos": head_at_query_box_token,
+        "heads_at_prev_query_box_pos": heads_at_prev_box_pos,
     }
 
     for layer_idx, head in direct_logit_heads:
@@ -347,7 +359,7 @@ def compute_heads_from_mask(mask_dict, rounded):
 
     for mask_idx in (rounded == 0).nonzero()[:, 0]:
         layer = inverse_mask_dict[mask_idx.item()]
-        layer_idx = int(layer.split(".")[2])
+        layer_idx = int(layer.split(".")[4])
         head_idx = int(layer.split(".")[-1])
         masked_heads.append([layer_idx, head_idx])
 
