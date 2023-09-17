@@ -3,6 +3,8 @@ import torch
 from einops import einsum, rearrange
 from baukit import TraceDict
 from functools import partial
+from collections import defaultdict
+import analysis_utils
 
 
 def apply_causal_mask(attn_scores):
@@ -226,3 +228,130 @@ def compute_prev_query_box_pos(input_ids, last_token_index):
         (input_ids[: last_token_index - 2] == query_box_token).nonzero().item()
     )
     return prev_query_box_token_pos
+
+
+def get_circuit_components(model):
+    circuit_components = {}
+    circuit_components[0] = defaultdict(list)
+    circuit_components[2] = defaultdict(list)
+    circuit_components[-1] = defaultdict(list)
+    circuit_components[-2] = defaultdict(list)
+
+    root_path = "./new_pp_exps/reverse/7_boxes"
+    path = root_path + "/direct_logit_heads.pt"
+    direct_logit_heads = analysis_utils.compute_topk_components(
+        torch.load(path), k=52, largest=False
+    )
+
+    path = root_path + "/heads_affect_direct_logit.pt"
+    heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
+        torch.load(path), k=15, largest=False
+    )
+
+    path = root_path + "/heads_at_query_box_pos.pt"
+    head_at_query_box_token = analysis_utils.compute_topk_components(
+        torch.load(path), k=30, largest=False
+    )
+
+    path = root_path + "/heads_at_prev_query_box_pos.pt"
+    heads_at_prev_box_pos = analysis_utils.compute_topk_components(
+        torch.load(path), k=5, largest=False
+    )
+
+    intersection = []
+    for head in direct_logit_heads:
+        if head in heads_affecting_direct_logit_heads:
+            intersection.append(head)
+
+    for head in intersection:
+        direct_logit_heads.remove(head)
+
+    head_groups = {
+        "direct_logit_heads": direct_logit_heads,
+        "heads_affecting_direct_logit_heads": heads_affecting_direct_logit_heads,
+        "head_at_query_box_token": head_at_query_box_token,
+        "heads_at_prev_box_pos": heads_at_prev_box_pos,
+    }
+
+    for layer_idx, head in direct_logit_heads:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in heads_affecting_direct_logit_heads:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in head_at_query_box_token:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[2][layer].append(head)
+
+    for layer_idx, head in heads_at_prev_box_pos:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[-1][layer].append(head)
+
+    for pos in circuit_components.keys():
+        for layer_idx in circuit_components[pos].keys():
+            circuit_components[pos][layer_idx] = list(set(circuit_components[pos][layer_idx]))
+
+    return circuit_components, head_groups
+
+
+def load_activations(model, modules, desiderata, device):
+    from_activations_train = {}
+
+    for di, desid in enumerate(desiderata):
+        from_activations_train[di] = {}
+
+        for bi, inputs in enumerate(desid):
+            for k, v in inputs.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(device)
+
+            from_activations_train[di][bi] = {}
+            with torch.no_grad():
+                with TraceDict(model, modules, retain_input=True) as trace:
+                    _ = model(inputs["source_input_ids"])
+
+                    for module in modules:
+                        if "self_attn" in module:
+                            from_activations_train[di][bi][module] = (
+                                trace[module].input.detach().cpu()
+                            )
+                        else:
+                            from_activations_train[di][bi][module] = (
+                                trace[module].output.detach().cpu()
+                            )
+
+            for k, v in inputs.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inputs[k] = v.to("cpu")
+
+            del trace
+            torch.cuda.empty_cache()
+
+    return from_activations_train
+
+
+def compute_heads_from_mask(mask_dict, rounded):
+    masked_heads = []
+    inverse_mask_dict = {v: k for k, v in mask_dict.items()}
+
+    for mask_idx in (rounded == 0).nonzero()[:, 0]:
+        layer = inverse_mask_dict[mask_idx.item()]
+        layer_idx = int(layer.split(".")[2])
+        head_idx = int(layer.split(".")[-1])
+        masked_heads.append([layer_idx, head_idx])
+
+    return masked_heads
