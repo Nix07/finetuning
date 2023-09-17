@@ -160,19 +160,24 @@ def edit_output(
                             batch, to_last_token_pos[batch] - rel_pos, head_start:head_end
                         ] = intervention
                     else:
-                        prev_box_token_pos = analysis_utils.compute_prev_query_box_pos(
+                        base_prev_box_token_pos = analysis_utils.compute_prev_query_box_pos(
                             input_tokens["base_input_ids"][batch],
                             input_tokens["base_input_last_pos"][batch],
                         )
+                        source_prev_box_token_pos = analysis_utils.compute_prev_query_box_pos(
+                            input_tokens["source_input_ids"][batch],
+                            input_tokens["source_input_last_pos"][batch],
+                        )
 
                         intervention = (
-                            abl_amt * inp[batch, prev_box_token_pos, head_start:head_end].clone()
+                            abl_amt
+                            * inp[batch, base_prev_box_token_pos, head_start:head_end].clone()
                             + (1 - abl_amt)
                             * from_activations[layer][
-                                batch, prev_box_token_pos, head_start:head_end
+                                batch, source_prev_box_token_pos, head_start:head_end
                             ]
                         )
-                        inp[batch, prev_box_token_pos, head_start:head_end] = intervention
+                        inp[batch, base_prev_box_token_pos, head_start:head_end] = intervention
 
         from_activations[layer] = from_activations[layer].to("cpu")
 
@@ -237,7 +242,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         mask_dict = {module: i for i, module in enumerate(modules_w_heads)}
 
         mask = {}
-        epochs = 3
+        epochs = 2
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
@@ -253,7 +258,7 @@ for desideratum_name, desideratum_method in desiderata.items():
             )
             optimizer = torch.optim.Adam([mask[lamb]], lr=1e-1)
             eval_acc = -np.inf
-            eval_heads = -np.inf
+            eval_heads = np.inf
 
             for epoch in range(epochs):
                 for di, desid_train in enumerate(desiderata_train):
@@ -349,7 +354,8 @@ for desideratum_name, desideratum_method in desiderata.items():
                                         torch.cuda.empty_cache()
 
                                 acc = correct / total
-                                if acc > eval_acc or (acc == eval_acc and len(heads) < eval_heads):
+                                if acc > eval_acc or (acc == eval_acc and len(heads) > eval_heads):
+                                    print(acc, eval_acc, eval_heads, len(heads))
                                     eval_acc = acc
                                     eval_heads = len(heads)
                                     torch.save(mask[lamb].data, f"{save_path}/{lamb}")

@@ -267,9 +267,6 @@ def get_circuit_components(model):
         direct_logit_heads.remove(head)
 
     head_groups = {
-        "direct_logit_heads": direct_logit_heads,
-        "heads_affecting_direct_logit_heads": heads_affecting_direct_logit_heads,
-        "head_at_query_box_token": head_at_query_box_token,
         "heads_at_prev_box_pos": heads_at_prev_box_pos,
     }
 
