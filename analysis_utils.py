@@ -117,23 +117,21 @@ def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=No
     d_head = model.config.hidden_size // n_heads
 
     key = (
-        residual[f"base_model.model.model.layers.{layer}.self_attn.k_proj"]
+        residual[f"model.layers.{layer}.self_attn.k_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
     query = (
-        residual[f"base_model.model.model.layers.{layer}.self_attn.q_proj"]
+        residual[f"model.layers.{layer}.self_attn.q_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
-    value = residual[f"base_model.model.model.layers.{layer}.self_attn.v_proj"].output.view(
+    value = residual[f"model.layers.{layer}.self_attn.v_proj"].output.view(
         batch_size, seq_len, n_heads, d_head
     )
 
     kv_seq_len = key.shape[-2]
-    cos, sin = model.base_model.model.model.layers[layer].self_attn.rotary_emb(
-        value, seq_len=kv_seq_len
-    )
+    cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
     positions = [i for i in range(seq_len)]
     positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
     query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
@@ -359,7 +357,7 @@ def compute_heads_from_mask(mask_dict, rounded):
 
     for mask_idx in (rounded == 0).nonzero()[:, 0]:
         layer = inverse_mask_dict[mask_idx.item()]
-        layer_idx = int(layer.split(".")[4])
+        layer_idx = int(layer.split(".")[2])
         head_idx = int(layer.split(".")[-1])
         masked_heads.append([layer_idx, head_idx])
 

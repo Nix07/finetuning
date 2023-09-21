@@ -20,28 +20,28 @@ torch.manual_seed(42)
 
 # %%
 print("Loading model...")
-# path = "./llama_7b"
-# tokenizer = AutoTokenizer.from_pretrained(path)
-# model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
+path = "./llama_7b"
+tokenizer = AutoTokenizer.from_pretrained(path)
+model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
 
-base_model = "decapoda-research/llama-7b-hf"
-lora_weights = "tiedong/goat-lora-7b"
+# base_model = "decapoda-research/llama-7b-hf"
+# lora_weights = "tiedong/goat-lora-7b"
 
-tokenizer = LlamaTokenizer.from_pretrained(
-    "hf-internal-testing/llama-tokenizer", padding_side="right"
-)
-model = LlamaForCausalLM.from_pretrained(
-    base_model,
-    load_in_8bit=False,
-    torch_dtype=torch.float32,
-    device_map="auto",
-)
-model = PeftModel.from_pretrained(
-    model,
-    lora_weights,
-    torch_dtype=torch.float32,
-    device_map={"": 0},
-)
+# tokenizer = LlamaTokenizer.from_pretrained(
+#     "hf-internal-testing/llama-tokenizer", padding_side="right"
+# )
+# model = LlamaForCausalLM.from_pretrained(
+#     base_model,
+#     load_in_8bit=False,
+#     torch_dtype=torch.float32,
+#     device_map="auto",
+# )
+# model = PeftModel.from_pretrained(
+#     model,
+#     lora_weights,
+#     torch_dtype=torch.float32,
+#     device_map={"": 0},
+# )
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 
@@ -225,7 +225,7 @@ relative_pos = {
 for desideratum_name, desideratum_method in desiderata.items():
     raw_data = desideratum_method(
         tokenizer=tokenizer,
-        num_samples=1000,
+        num_samples=2000,
         data_file=data_file_path,
         object_file=object_file_path,
         num_boxes=7,
@@ -270,7 +270,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
-        save_path = f"./new_masks/goat/{head_group_name}/{desideratum_name}/"
+        save_path = f"./new_masks/llama-7b/{head_group_name}/{desideratum_name}/"
 
         # check if the path exists
         if not os.path.exists(save_path):

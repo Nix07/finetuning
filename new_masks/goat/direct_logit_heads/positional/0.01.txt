@@ -1,2 +1,2 @@
-Heads: [[18, 3], [18, 28], [17, 3]]
-Test Accuracy: 0.152
+Heads: []
+Test Accuracy: 0.154

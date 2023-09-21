@@ -330,10 +330,10 @@ def box_label_value_desiderata(
 
         source_prompts.append(source_prompt)
         base_correct_object = [
-                    segment.split(" ")[1]
-                    for segment in base_prompt.split(". ")[0].split(", ")
-                    if source_query_box_label in segment.split(" ")
-                ]
+            segment.split(" ")[1]
+            for segment in base_prompt.split(". ")[0].split(", ")
+            if source_query_box_label in segment.split(" ")
+        ]
         labels.append(tokenizer.encode(base_correct_object)[1])
 
     base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
@@ -1079,7 +1079,7 @@ def box_index_aligner_examples(
 
             random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
             random_source_index += (j + 1) % num_ents_or_ops
-            source_example = input_ids[random_source_index].copy()
+            source_example = input_ids[random_source_index].clone().detach()
 
             # Generate a random english alphabet in upper case
             random_alphabet = chr(random.randint(65, 90))
