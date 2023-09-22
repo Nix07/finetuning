@@ -1,4 +1,5 @@
 import math
+import json
 import torch
 from einops import einsum, rearrange
 from baukit import TraceDict
@@ -117,23 +118,21 @@ def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=No
     d_head = model.config.hidden_size // n_heads
 
     key = (
-        residual[f"base_model.model.model.layers.{layer}.self_attn.k_proj"]
+        residual[f"model.layers.{layer}.self_attn.k_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
     query = (
-        residual[f"base_model.model.model.layers.{layer}.self_attn.q_proj"]
+        residual[f"model.layers.{layer}.self_attn.q_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
-    value = residual[f"base_model.model.model.layers.{layer}.self_attn.v_proj"].output.view(
+    value = residual[f"model.layers.{layer}.self_attn.v_proj"].output.view(
         batch_size, seq_len, n_heads, d_head
     )
 
     kv_seq_len = key.shape[-2]
-    cos, sin = model.base_model.model.model.layers[layer].self_attn.rotary_emb(
-        value, seq_len=kv_seq_len
-    )
+    cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
     positions = [i for i in range(seq_len)]
     positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
     query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
@@ -240,40 +239,53 @@ def get_circuit_components(model):
     circuit_components[-2] = defaultdict(list)
 
     root_path = "./new_pp_exps/reverse/7_boxes"
-    path = root_path + "/direct_logit_heads.pt"
-    direct_logit_heads = analysis_utils.compute_topk_components(
-        torch.load(path), k=52, largest=False
-    )
+    with open("circuit_heads.json", "r") as f:
+        circuit_heads = json.load(f)
 
-    path = root_path + "/heads_affect_direct_logit.pt"
-    heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
-        torch.load(path), k=15, largest=False
-    )
+    direct_logit_heads = circuit_heads["direct_logit_heads"]
+    heads_affecting_direct_logit_heads = circuit_heads["heads_affecting_direct_logit_heads"]
+    head_at_query_box_token = circuit_heads["head_at_query_box_token"]
+    heads_at_prev_box_pos = circuit_heads["heads_at_prev_box_pos"]
 
-    path = root_path + "/heads_at_query_box_pos.pt"
-    head_at_query_box_token = analysis_utils.compute_topk_components(
-        torch.load(path), k=30, largest=False
-    )
+    # path = root_path + "/direct_logit_heads.pt"
+    # direct_logit_heads = analysis_utils.compute_topk_components(
+    #     torch.load(path), k=52, largest=False
+    # )
 
-    path = root_path + "/heads_at_prev_query_box_pos.pt"
-    heads_at_prev_box_pos = analysis_utils.compute_topk_components(
-        torch.load(path), k=5, largest=False
-    )
+    # path = root_path + "/heads_affect_direct_logit.pt"
+    # heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
+    #     torch.load(path), k=15, largest=False
+    # )
 
-    intersection = []
-    for head in direct_logit_heads:
-        if head in heads_affecting_direct_logit_heads:
-            intersection.append(head)
+    # path = root_path + "/heads_at_query_box_pos.pt"
+    # head_at_query_box_token = analysis_utils.compute_topk_components(
+    #     torch.load(path), k=30, largest=False
+    # )
 
-    for head in intersection:
-        direct_logit_heads.remove(head)
+    # path = root_path + "/heads_at_prev_query_box_pos.pt"
+    # heads_at_prev_box_pos = analysis_utils.compute_topk_components(
+    #     torch.load(path), k=5, largest=False
+    # )
 
-    print(
-        len(direct_logit_heads),
-        len(heads_affecting_direct_logit_heads),
-        len(head_at_query_box_token),
-        len(heads_at_prev_box_pos),
-    )
+    # intersection = []
+    # for head in direct_logit_heads:
+    #     if head in heads_affecting_direct_logit_heads:
+    #         intersection.append(head)
+
+    # for head in intersection:
+    #     direct_logit_heads.remove(head)
+
+    print(f"Direct logit heads: {len(direct_logit_heads)}")
+    print(f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}")
+    print(f"Heads at query box token: {len(head_at_query_box_token)}")
+    print(f"Heads at prev query box token: {len(heads_at_prev_box_pos)}")
+
+    # print(
+    #     len(direct_logit_heads),
+    #     len(heads_affecting_direct_logit_heads),
+    #     len(head_at_query_box_token),
+    #     len(heads_at_prev_box_pos),
+    # )
 
     head_groups = {
         "direct_logit_heads": direct_logit_heads,
@@ -353,13 +365,17 @@ def load_activations(model, modules, desiderata, device):
     return from_activations_train
 
 
-def compute_heads_from_mask(mask_dict, rounded):
+def compute_heads_from_mask(model, mask_dict, rounded):
     masked_heads = []
     inverse_mask_dict = {v: k for k, v in mask_dict.items()}
 
     for mask_idx in (rounded == 0).nonzero()[:, 0]:
         layer = inverse_mask_dict[mask_idx.item()]
-        layer_idx = int(layer.split(".")[4])
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer_idx = int(layer.split(".")[2])
+        else:
+            layer_idx = int(layer.split(".")[4])
+
         head_idx = int(layer.split(".")[-1])
         masked_heads.append([layer_idx, head_idx])
 
