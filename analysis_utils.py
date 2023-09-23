@@ -247,34 +247,6 @@ def get_circuit_components(model):
     head_at_query_box_token = circuit_heads["head_at_query_box_token"]
     heads_at_prev_box_pos = circuit_heads["heads_at_prev_box_pos"]
 
-    # path = root_path + "/direct_logit_heads.pt"
-    # direct_logit_heads = analysis_utils.compute_topk_components(
-    #     torch.load(path), k=52, largest=False
-    # )
-
-    # path = root_path + "/heads_affect_direct_logit.pt"
-    # heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
-    #     torch.load(path), k=15, largest=False
-    # )
-
-    # path = root_path + "/heads_at_query_box_pos.pt"
-    # head_at_query_box_token = analysis_utils.compute_topk_components(
-    #     torch.load(path), k=30, largest=False
-    # )
-
-    # path = root_path + "/heads_at_prev_query_box_pos.pt"
-    # heads_at_prev_box_pos = analysis_utils.compute_topk_components(
-    #     torch.load(path), k=5, largest=False
-    # )
-
-    # intersection = []
-    # for head in direct_logit_heads:
-    #     if head in heads_affecting_direct_logit_heads:
-    #         intersection.append(head)
-
-    # for head in intersection:
-    #     direct_logit_heads.remove(head)
-
     print(f"Direct logit heads: {len(direct_logit_heads)}")
     print(f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}")
     print(f"Heads at query box token: {len(head_at_query_box_token)}")
