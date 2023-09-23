@@ -54,6 +54,7 @@ tokenizer.pad_token_id = tokenizer.eos_token_id
 print("Model loaded.")
 
 relative_pos = {
+    "direct_logit_heads": 0,
     "heads_affect_direct_logit": 0,
     "heads_at_query_box_pos": 2,
     "heads_at_prev_query_box_pos": -1,
@@ -146,6 +147,7 @@ results = {}
 results["llama"] = {}
 
 for head_group in [
+    "direct_logit_heads",
     "heads_affect_direct_logit",
     "heads_at_query_box_pos",
     "heads_at_prev_query_box_pos",
@@ -206,7 +208,7 @@ for head_group in [
                     edit_output=partial(
                         patching, patching_heads=patching_heads, bi=bi, input_tokens=inputs
                     ),
-                ) as cache:
+                ) as _:
                     outputs = model(inputs["base_input_ids"])
 
                 for idx in range(inputs["base_input_ids"].size(0)):

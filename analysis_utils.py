@@ -252,14 +252,8 @@ def get_circuit_components(model):
     print(f"Heads at query box token: {len(head_at_query_box_token)}")
     print(f"Heads at prev query box token: {len(heads_at_prev_box_pos)}")
 
-    # print(
-    #     len(direct_logit_heads),
-    #     len(heads_affecting_direct_logit_heads),
-    #     len(head_at_query_box_token),
-    #     len(heads_at_prev_box_pos),
-    # )
-
     head_groups = {
+        "direct_logit_heads": direct_logit_heads,
         "heads_affect_direct_logit": heads_affecting_direct_logit_heads,
         "heads_at_query_box_pos": head_at_query_box_token,
         "heads_at_prev_query_box_pos": heads_at_prev_box_pos,
