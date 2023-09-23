@@ -271,7 +271,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
-        save_path = f"./new_masks/goat/{head_group_name}/{desideratum_name}/"
+        save_path = f"./new_masks/llama-7b/{head_group_name}/{desideratum_name}/"
 
         # check if the path exists
         if not os.path.exists(save_path):

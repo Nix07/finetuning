@@ -288,7 +288,6 @@ def get_circuit_components(model):
     # )
 
     head_groups = {
-        "direct_logit_heads": direct_logit_heads,
         "heads_affect_direct_logit": heads_affecting_direct_logit_heads,
         "heads_at_query_box_pos": head_at_query_box_token,
         "heads_at_prev_query_box_pos": heads_at_prev_box_pos,

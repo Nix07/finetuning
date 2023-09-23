@@ -1,0 +1,37 @@
+{
+    "llama": {
+        "heads_affect_direct_logit": {
+            "positional": [
+                39.0
+            ],
+            "object_value": [
+                4.0
+            ],
+            "box_label_value": [
+                0.0
+            ]
+        },
+        "heads_at_query_box_pos": {
+            "positional": [
+                36.0
+            ],
+            "object_value": [
+                2.0
+            ],
+            "box_label_value": [
+                0.0
+            ]
+        },
+        "heads_at_prev_query_box_pos": {
+            "positional": [
+                20.0
+            ],
+            "object_value": [
+                3.0
+            ],
+            "box_label_value": [
+                0.0
+            ]
+        }
+    }
+}
