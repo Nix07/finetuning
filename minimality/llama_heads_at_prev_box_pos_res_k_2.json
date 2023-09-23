@@ -1,0 +1,1 @@
+{"('model.layers.8.self_attn.o_proj', 21)": [55.33, 43.33], "('model.layers.12.self_attn.o_proj', 23)": [45.0, 44.0], "('model.layers.11.self_attn.o_proj', 9)": [55.0, 55.0], "('model.layers.11.self_attn.o_proj', 23)": [56.33, 54.67], "('model.layers.9.self_attn.o_proj', 21)": [55.33, 54.0]}
