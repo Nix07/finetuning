@@ -290,6 +290,809 @@ def generate_data_for_eval(
     )
 
 
+def alter_box_object_association(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
+        source_segment = source_segment.replace(" is in", " is not in")
+        source_prompt = (
+            ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
+            + (", " if source_query_box_pos != 0 else "")
+            + source_segment
+            + (
+                ", "
+                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                else ""
+            )
+            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_box_before_correct_segment(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
+        source_segment = (
+            "there are three additional boxes, Box PP, Box BB and Box AA," + source_segment
+        )
+        source_prompt = (
+            ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
+            + (", " if source_query_box_pos != 0 else "")
+            + source_segment
+            + (
+                ", "
+                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                else ""
+            )
+            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_raw_text_at_end(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = (
+            source_prompt.split(". ")[0]
+            + ", these are a bunch of boxes containing objects"
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_raw_text_at_start(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = (
+            "There are three boxes, Box PP, Box BB and Box AA, "
+            + source_prompt[0].lower()
+            + source_prompt[1:]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_segment_at_end(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = (
+            source_prompt.split(". ")[0]
+            + ", the apple is in Box O"
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_segment_at_start(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = "The apple is in Box O, " + source_prompt[0].lower() + source_prompt[1:]
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def additional_token_btw_box_and_object(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
+        source_segment = source_segment.replace(" is in", " is contained in the")
+        source_prompt = (
+            ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
+            + (", " if source_query_box_pos != 0 else "")
+            + source_segment
+            + (
+                ", "
+                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                else ""
+            )
+            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def diff_index_query_box(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[(source_query_box_pos + 1) % 7].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def box_object_altered_order(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    # data = [data[i] for i in correct_pred_indices]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
+        source_box = source_segment.split(" ")[-1]
+        source_object = source_segment.split(" ")[1]
+        source_segment = f"Box {source_box} contains the {source_object}"
+
+        source_prompt = (
+            ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
+            + ", "
+            + source_segment
+            + ", "
+            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ". "
+            + source_prompt.split(". ")[-1]
+        )
+
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def add_comma_after_object(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    # data = [data[i] for i in correct_pred_indices]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = source_prompt.replace(" is", ", is")
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
+def remove_comma_desiderata(
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    # data = [data[i] for i in correct_pred_indices]
+
+    assert num_samples <= len(data)
+    base_prompts, source_prompts, labels = [], [], []
+
+    for i in range(0, num_samples):
+        base_prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        base_query = base_prompt.split(". ")[-1]
+        base_query_box_label = base_query.split(" ")[1]
+        base_query_box_pos = [
+            idx
+            for idx, segment in enumerate(base_query.split(". ")[0].split(", "))
+            if base_query_box_label in segment
+        ][0]
+        if base_query_box_pos == -1:
+            raise ValueError("Box label not found in the base prompt")
+        base_prompts.append(base_prompt)
+
+        source_query_box_pos = base_query_box_pos
+        random_choices = list(range(0, num_samples))
+        random.shuffle(random_choices)
+        while source_query_box_pos == base_query_box_pos:
+            random_source_index = random.choice(random_choices)
+            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_query = source_prompt.split(". ")[-1]
+            source_query_box_label = source_query.split(" ")[1]
+            source_query_box_pos = [
+                idx
+                for idx, segment in enumerate(source_prompt.split(". ")[0].split(", "))
+                if source_query_box_label in segment
+            ][0]
+            random_choices.remove(random_source_index)
+
+        source_prompt = source_prompt.replace(", ", " ")
+        source_prompts.append(source_prompt)
+
+        base_prompt = base_prompt.split(". ")[0]
+        correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
+        labels.append(tokenizer.encode(correct_object)[1])
+
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_last_token_indices = (
+        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+    )
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_last_token_indices = (
+        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        - 1
+    )
+    output_ids = torch.tensor(labels)
+
+    return (
+        base_input_tokens,
+        base_last_token_indices,
+        source_input_tokens,
+        source_last_token_indices,
+        output_ids,
+    )
+
+
 def box_label_value_desiderata(
     tokenizer,
     num_samples,
