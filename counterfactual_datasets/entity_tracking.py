@@ -410,9 +410,14 @@ def add_box_before_correct_segment(
             random_choices.remove(random_source_index)
 
         source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
-        source_segment = (
-            "there are three additional boxes, Box PP, Box BB and Box AA," + source_segment
-        )
+        if source_query_box_pos != 0:
+            source_segment = (
+                "there are three additional boxes, Box PP, Box BB and Box AA, " + source_segment
+            )
+        else:
+            source_segment = (
+                "There are three additional boxes, Box PP, Box BB and Box AA, " + source_segment
+            )
         source_prompt = (
             ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
             + (", " if source_query_box_pos != 0 else "")
@@ -563,7 +568,7 @@ def add_raw_text_at_start(
             random_choices.remove(random_source_index)
 
         source_prompt = (
-            "There are three boxes, Box PP, Box BB and Box AA, "
+            "There are a bunch of boxes containing objects, "
             + source_prompt[0].lower()
             + source_prompt[1:]
         )
