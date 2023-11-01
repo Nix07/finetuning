@@ -26,50 +26,41 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(42)
 
 print("Loading model...")
-path = "./llama_7b/"
+path = "/data/nikhil_prakash/llama_weights/7B"
 tokenizer = AutoTokenizer.from_pretrained(path)
 model = AutoModelForCausalLM.from_pretrained(path).to(device)
-
-# base_model = "decapoda-research/llama-7b-hf"
-# lora_weights = "tiedong/goat-lora-7b"
-
-# tokenizer = LlamaTokenizer.from_pretrained(
-#     "hf-internal-testing/llama-tokenizer", padding_side="right"
-# )
-# model = LlamaForCausalLM.from_pretrained(
-#     base_model,
-#     load_in_8bit=False,
-#     torch_dtype=torch.float32,
-#     device_map="auto",
-# )
-# model = PeftModel.from_pretrained(
-#     model,
-#     lora_weights,
-#     torch_dtype=torch.float32,
-#     device_map={"": 0},
-# )
-
 
 tokenizer.pad_token_id = tokenizer.eos_token_id
 print("Model loaded.")
 
-relative_pos = {
-    "direct_logit_heads": 0,
-    "heads_affect_direct_logit": 0,
-    "heads_at_query_box_pos": 2,
-    "heads_at_prev_query_box_pos": -1,
-}
-
 num_boxes = 7
-batch_size = 8
-data_file_path = f"./box_datasets/no_instructions/alternative/Random/{num_boxes}/train.jsonl"
-object_file_path = "./box_datasets/filtered_objects_with_bnc_frequency.csv"
+batch_size = 16
+data_file_path = f"/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/{num_boxes}/train.jsonl"
+object_file_path = (
+    "/data/nikhil_prakash/anima-2.0/box_datasets/filtered_objects_with_bnc_frequency.csv"
+)
 
 desiderata_methods = {
-    "positional": positional_desiderata,
-    "object_value": object_value_desiderata,
-    "box_label_value": box_label_value_desiderata,
+    "raw_text_start": add_raw_text_at_start,
+    "raw_text_end": add_raw_text_at_end,
+    "additional_tokens_btw_obj_and_box": additional_token_btw_box_and_object,
+    "add_segment_start": add_segment_at_start,
+    "add_segment_end": add_segment_at_end,
+    "add_boxes_before_correct_segment": add_box_before_correct_segment,
+    "incorrect_box_segment_index": diff_index_query_box,
+    "Box_object_altered_order": box_object_altered_order,
+    "object_not_in_box": alter_box_object_association,
+    "no_comma": remove_comma_desiderata,
+    "comma_after_object": add_comma_after_object,
 }
+
+with open(
+    f"/data/nikhil_prakash/anima-2.0/new_masks/llama-7b/heads_affect_direct_logit/positional/0.01.txt",
+    "r",
+) as f:
+    data = f.readlines()
+    heads = json.loads(data[0].split(": ")[1])
+patching_heads = {0: heads}
 
 
 def load_data(raw_data, batch_size):
@@ -123,9 +114,9 @@ def patching(inputs, output, layer, patching_heads, bi, input_tokens):
                 for head in curr_layer_heads:
                     inputs[batch, prev_query_box_pos, head] = cache[batch, prev_query_box_pos, head]
         else:
-            pos = inputs.size(1) - rel_pos - 1
+            # pos = inputs.size(1) - rel_pos - 1
             for head in curr_layer_heads:
-                inputs[:, pos, head] = cache[:, pos, head]
+                inputs[:, -1, head] = cache[:, -1, head]
 
     inputs = rearrange(
         inputs,
@@ -143,89 +134,72 @@ def patching(inputs, output, layer, patching_heads, bi, input_tokens):
     return output
 
 
-results = {}
-results["llama"] = {}
+results = defaultdict(list)
+for desiderata in desiderata_methods.keys():
+    for _ in tqdm(range(10)):
+        raw_data = desiderata_methods[desiderata](
+            tokenizer=tokenizer,
+            num_samples=500,
+            data_file=data_file_path,
+        )
+        print(f"Desiderata: {desiderata}")
+        print(f"Original: {tokenizer.decode(raw_data[0][0])}")
+        print(f"Alternate: {tokenizer.decode(raw_data[2][0])}")
+        print(f"Label: {tokenizer.decode(raw_data[4][0])}")
 
-for head_group in [
-    "direct_logit_heads",
-    "heads_affect_direct_logit",
-    "heads_at_query_box_pos",
-    "heads_at_prev_query_box_pos",
-]:
-    if head_group not in results["llama"]:
-        results["llama"][head_group] = defaultdict(list)
+        dataloader = load_data(raw_data=raw_data, batch_size=batch_size)
 
-    for desiderata in ["positional", "object_value", "box_label_value"]:
-        with open(f"./new_masks/llama-7b/{head_group}/{desiderata}/0.01.txt", "r") as f:
-            data = f.readlines()
-            heads = json.loads(data[0].split(": ")[1])
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            modules = [f"model.layers.{i}.self_attn.o_proj" for i in range(32)]
+        else:
+            modules = [f"base_model.model.model.layers.{i}.self_attn.o_proj" for i in range(32)]
 
-        patching_heads = {relative_pos[head_group]: heads}
+        source_cache = {}
+        for bi, inputs in enumerate(dataloader):
+            for k, v in inputs.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(model.device)
 
-        for _ in tqdm(range(10)):
-            raw_data = desiderata_methods[desiderata](
-                tokenizer=tokenizer,
-                num_samples=1000,
-                data_file=data_file_path,
-                object_file=object_file_path,
-                num_boxes=7,
-                alt_format=True,
-                correct_pred_indices=[],
-            )
+            with TraceDict(model, modules, retain_input=True) as cache:
+                _ = model(inputs["source_input_ids"])
 
-            dataloader = load_data(raw_data=raw_data, batch_size=batch_size)
+            for module in modules:
+                if bi in source_cache:
+                    source_cache[bi][module] = cache[module].input.detach().cpu()
+                else:
+                    source_cache[bi] = {module: cache[module].input.detach().cpu()}
 
-            if model.config.architectures[0] == "LlamaForCausalLM":
-                modules = [f"model.layers.{i}.self_attn.o_proj" for i in range(32)]
-            else:
-                modules = [f"base_model.model.model.layers.{i}.self_attn.o_proj" for i in range(32)]
+        correct_count, total_count = 0, 0
+        for bi, inputs in tqdm(enumerate(dataloader)):
+            for k, v in inputs.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(model.device)
 
-            source_cache = {}
-            for bi, inputs in enumerate(dataloader):
-                for k, v in inputs.items():
-                    if v is not None and isinstance(v, torch.Tensor):
-                        inputs[k] = v.to(model.device)
+            with TraceDict(
+                model,
+                modules,
+                retain_input=True,
+                edit_output=partial(
+                    patching, patching_heads=patching_heads, bi=bi, input_tokens=inputs
+                ),
+            ) as _:
+                outputs = model(inputs["base_input_ids"])
 
-                with TraceDict(model, modules, retain_input=True) as cache:
-                    _ = model(inputs["source_input_ids"])
+            for idx in range(inputs["base_input_ids"].size(0)):
+                label = inputs["labels"][idx].item()
+                pred = torch.argmax(outputs.logits[idx, -1], dim=-1).item()
 
-                for module in modules:
-                    if bi in source_cache:
-                        source_cache[bi][module] = cache[module].input.detach().cpu()
-                    else:
-                        source_cache[bi] = {module: cache[module].input.detach().cpu()}
+                if label == pred:
+                    correct_count += 1
+                total_count += 1
 
-            correct_count, total_count = 0, 0
-            for bi, inputs in tqdm(enumerate(dataloader)):
-                for k, v in inputs.items():
-                    if v is not None and isinstance(v, torch.Tensor):
-                        inputs[k] = v.to(model.device)
+            del outputs
+            torch.cuda.empty_cache()
 
-                with TraceDict(
-                    model,
-                    modules,
-                    retain_input=True,
-                    edit_output=partial(
-                        patching, patching_heads=patching_heads, bi=bi, input_tokens=inputs
-                    ),
-                ) as _:
-                    outputs = model(inputs["base_input_ids"])
+        acc = round(correct_count / total_count * 100, 2)
+        print(f"Desiderata: {desiderata}, Accuracy: {acc}")
+        results[desiderata].append(acc)
 
-                for idx in range(inputs["base_input_ids"].size(0)):
-                    label = inputs["labels"][idx].item()
-                    pred = torch.argmax(outputs.logits[idx, -1], dim=-1).item()
-
-                    if label == pred:
-                        correct_count += 1
-                    total_count += 1
-
-                del outputs
-                torch.cuda.empty_cache()
-
-            acc = round(correct_count / total_count * 100, 2)
-            print(f"Head group: {head_group}, Desiderata: {desiderata}, Accuracy: {acc}")
-            results["llama"][head_group][desiderata].append(acc)
-
-            # Store results in json file
-            with open("llama_semantic_results.json", "w") as f:
-                json.dump(results, f, indent=4)
+        # Store results in json file
+        with open("additional_desiderata_results.json", "w") as f:
+            json.dump(results, f, indent=4)
