@@ -34,9 +34,11 @@ tokenizer.pad_token_id = tokenizer.eos_token_id
 print("Model loaded.")
 
 num_boxes = 7
-batch_size = 8
-data_file_path = f"./box_datasets/no_instructions/alternative/Random/{num_boxes}/train.jsonl"
-object_file_path = "./box_datasets/filtered_objects_with_bnc_frequency.csv"
+batch_size = 16
+data_file_path = f"/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/{num_boxes}/train.jsonl"
+object_file_path = (
+    "/data/nikhil_prakash/anima-2.0/box_datasets/filtered_objects_with_bnc_frequency.csv"
+)
 
 desiderata_methods = {
     "raw_text_start": add_raw_text_at_start,
@@ -53,7 +55,7 @@ desiderata_methods = {
 }
 
 with open(
-    f"./new_masks/llama-7b/heads_affect_direct_logit/positional/0.01.txt",
+    f"/data/nikhil_prakash/anima-2.0/new_masks/llama-7b/heads_affect_direct_logit/positional/0.01.txt",
     "r",
 ) as f:
     data = f.readlines()

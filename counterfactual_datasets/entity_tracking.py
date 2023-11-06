@@ -4,9 +4,6 @@ import torch
 import pandas as pd
 import numpy as np
 
-# random.seed(42)
-
-
 def change_box_label(
     tokenizer,
     num_samples,
@@ -1880,12 +1877,12 @@ def box_index_aligner_examples(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_ctf_output_ids += [output_ids[i + j]]
 
-            temp = []
-            for ind in range(1, num_ents_or_ops):
-                temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
-            all_incorrect_output_ids += [temp]
+#             temp = []
+#             for ind in range(1, num_ents_or_ops):
+#                 temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
+#             all_incorrect_output_ids += [temp]
 
-            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
+            random_source_index = random.choice(list(range(0, num_samples - ((j + 1) % num_ents_or_ops), num_ents_or_ops)))
             random_source_index += (j + 1) % num_ents_or_ops
             source_example = input_ids[random_source_index].clone()
 
