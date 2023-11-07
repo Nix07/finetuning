@@ -5,15 +5,22 @@ from einops import einsum, rearrange
 from baukit import TraceDict
 from functools import partial
 from collections import defaultdict
-import analysis_utils
+from datasets import Dataset
+from torch.utils.data import DataLoader
+from counterfactual_datasets.entity_tracking import *
 
-torch.manual_seed(42)
+seed = 10
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
 
 
 def apply_causal_mask(attn_scores):
     ignore = torch.tensor(torch.finfo(attn_scores.dtype).min)
     mask = torch.triu(
-        torch.ones(attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device),
+        torch.ones(
+            attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device
+        ),
         diagonal=1,
     ).bool()
     attn_scores.masked_fill_(mask, ignore)
@@ -51,7 +58,9 @@ def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
             n_heads=model.config.num_attention_heads,
         )
 
-        ablation_heads_curr_layer = [h for l_idx, h in ablation_heads if l_idx == layer_idx]
+        ablation_heads_curr_layer = [
+            h for l_idx, h in ablation_heads if l_idx == layer_idx
+        ]
 
         for head in ablation_heads_curr_layer:
             for bi in range(batch_size):
@@ -150,7 +159,12 @@ def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=No
 
 
 def perf_metric(
-    patched_logits, answer, base_logits, source_logits, base_last_token_pos, source_last_token_pos
+    patched_logits,
+    answer,
+    base_logits,
+    source_logits,
+    base_last_token_pos,
+    source_last_token_pos,
 ):
     """Computes the impact of patching on the model's output logits on a scale of [0, 1]."""
     # TODO: Remove for loop
@@ -191,7 +205,9 @@ def comparison_metric(eval_preds, eval_labels, incorrect_objects):
     # incorrect_objects: (#batch, #incorrect_objects)
     total_count = 0
     correct_count = 0
-    for pred, correct_object, incorrect_objs in zip(eval_preds, eval_labels, incorrect_objects):
+    for pred, correct_object, incorrect_objs in zip(
+        eval_preds, eval_labels, incorrect_objects
+    ):
         correctness = True
         for incorrect_object in incorrect_objs:
             if pred[correct_object] >= pred[incorrect_object]:
@@ -243,12 +259,16 @@ def get_circuit_components(model):
         circuit_heads = json.load(f)
 
     direct_logit_heads = circuit_heads["direct_logit_heads"]
-    heads_affecting_direct_logit_heads = circuit_heads["heads_affecting_direct_logit_heads"]
+    heads_affecting_direct_logit_heads = circuit_heads[
+        "heads_affecting_direct_logit_heads"
+    ]
     head_at_query_box_token = circuit_heads["head_at_query_box_token"]
     heads_at_prev_box_pos = circuit_heads["heads_at_prev_box_pos"]
 
     print(f"Direct logit heads: {len(direct_logit_heads)}")
-    print(f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}")
+    print(
+        f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}"
+    )
     print(f"Heads at query box token: {len(head_at_query_box_token)}")
     print(f"Heads at prev query box token: {len(heads_at_prev_box_pos)}")
 
@@ -289,7 +309,9 @@ def get_circuit_components(model):
 
     for pos in circuit_components.keys():
         for layer_idx in circuit_components[pos].keys():
-            circuit_components[pos][layer_idx] = list(set(circuit_components[pos][layer_idx]))
+            circuit_components[pos][layer_idx] = list(
+                set(circuit_components[pos][layer_idx])
+            )
 
     return circuit_components, head_groups
 
@@ -345,3 +367,176 @@ def compute_heads_from_mask(model, mask_dict, rounded):
         masked_heads.append([layer_idx, head_idx])
 
     return masked_heads
+
+
+def get_ablation_data(tokenizer, data_file, batch_size):
+    raw_data = generate_data_for_eval(
+        tokenizer=tokenizer,
+        num_samples=3500,
+        data_file=data_file,
+        num_boxes=7,
+    )
+
+    ablate_dataset = Dataset.from_dict(
+        {
+            "input_ids": raw_data[0],
+            "last_token_indices": raw_data[1],
+        }
+    ).with_format("torch")
+
+    print(f"Length of dataset: {len(ablate_dataset)}")
+
+    ablate_dataloader = DataLoader(ablate_dataset, batch_size=batch_size)
+    return ablate_dataloader
+
+
+def get_mean_activations(model, tokenizer, modules, data_file, batch_size):
+    ablate_dataloader = get_ablation_data(tokenizer, data_file, batch_size)
+
+    mean_activations = {}
+    with torch.no_grad():
+        # Assuming a single batch
+        for _, output in enumerate(ablate_dataloader):
+            for k, v in output.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    output[k] = v.to(model.device)
+
+            with TraceDict(model, modules, retain_input=True) as cache:
+                _ = model(output["input_ids"])
+
+            for layer in modules:
+                if "self_attn" in layer:
+                    if layer in mean_activations:
+                        mean_activations[layer] += torch.mean(cache[layer].input, dim=0)
+                    else:
+                        mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
+                else:
+                    if layer in mean_activations:
+                        mean_activations[layer] += torch.mean(
+                            cache[layer].output, dim=0
+                        )
+                    else:
+                        mean_activations[layer] = torch.mean(cache[layer].output, dim=0)
+
+            del cache
+            torch.cuda.empty_cache()
+
+        for layer in modules:
+            mean_activations[layer] /= len(ablate_dataloader)
+
+    return mean_activations
+
+
+def mean_ablate(
+    model, inputs, output, layer, circuit_components, mean_activations, input_tokens
+):
+    if isinstance(inputs, tuple):
+        inputs = inputs[0]
+
+    if isinstance(output, tuple):
+        output = output[0]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    mean_act = rearrange(
+        mean_activations[layer],
+        "seq_len (n_heads d_head) -> 1 seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    last_pos = inputs.size(1) - 1
+    for bi in range(inputs.size(0)):
+        prev_query_box_pos = compute_prev_query_box_pos(
+            input_tokens[bi], input_tokens[bi].size(0) - 1
+        )
+        for token_pos in range(inputs.size(1)):
+            if (
+                token_pos != prev_query_box_pos
+                and token_pos != last_pos
+                and token_pos != last_pos - 2
+                and token_pos != prev_query_box_pos + 1
+            ):
+                inputs[bi, token_pos, :] = mean_act[0, token_pos, :]
+            elif token_pos == prev_query_box_pos:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[-1][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == prev_query_box_pos + 1:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[-2][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == last_pos:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[0][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == last_pos - 2:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[2][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+        n_heads=model.config.num_attention_heads,
+    )
+    w_o = model.state_dict()[f"{layer}.weight"]
+    output = einsum(
+        inputs,
+        w_o,
+        "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model",
+    )
+
+    return output
+
+
+def eval(model, dataloader, modules, circuit_components, mean_activations):
+    correct_count, total_count = 0, 0
+    with torch.no_grad():
+        for _, output in enumerate(dataloader):
+            for k, v in output.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    output[k] = v.to(model.device)
+
+            with TraceDict(
+                model,
+                modules,
+                retain_input=True,
+                edit_output=partial(
+                    mean_ablate,
+                    circuit_components=circuit_components,
+                    mean_activations=mean_activations,
+                    input_tokens=output["input_ids"],
+                ),
+            ) as _:
+                outputs = model(output["input_ids"])
+
+            for bi in range(output["labels"].size(0)):
+                label = output["labels"][bi]
+                pred = torch.argmax(
+                    outputs.logits[bi][output["last_token_indices"][bi]]
+                )
+
+                if label == pred:
+                    correct_count += 1
+                # else:
+                #     print(f"Label: {tokenizer.decode(label)}, Prediction: {tokenizer.decode(pred)}")
+                total_count += 1
+
+            del outputs
+            torch.cuda.empty_cache()
+
+    current_acc = round(correct_count / total_count, 2)
+    print(f"Task accuracy: {current_acc}")
+    return current_acc
