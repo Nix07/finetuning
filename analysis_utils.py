@@ -428,7 +428,13 @@ def get_mean_activations(model, tokenizer, modules, data_file, batch_size):
 
 
 def mean_ablate(
-    model, inputs, output, layer, circuit_components, mean_activations, input_tokens
+    inputs=None,
+    output=None,
+    layer=None,
+    model=None,
+    circuit_components=None,
+    mean_activations=None,
+    input_tokens=None,
 ):
     if isinstance(inputs, tuple):
         inputs = inputs[0]
@@ -504,10 +510,10 @@ def mean_ablate(
 def eval(model, dataloader, modules, circuit_components, mean_activations):
     correct_count, total_count = 0, 0
     with torch.no_grad():
-        for _, output in enumerate(dataloader):
-            for k, v in output.items():
+        for _, inp in enumerate(dataloader):
+            for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
-                    output[k] = v.to(model.device)
+                    inp[k] = v.to(model.device)
 
             with TraceDict(
                 model,
@@ -515,18 +521,17 @@ def eval(model, dataloader, modules, circuit_components, mean_activations):
                 retain_input=True,
                 edit_output=partial(
                     mean_ablate,
+                    model=model,
                     circuit_components=circuit_components,
                     mean_activations=mean_activations,
-                    input_tokens=output["input_ids"],
+                    input_tokens=inp["input_ids"],
                 ),
             ) as _:
-                outputs = model(output["input_ids"])
+                outputs = model(inp["input_ids"])
 
-            for bi in range(output["labels"].size(0)):
-                label = output["labels"][bi]
-                pred = torch.argmax(
-                    outputs.logits[bi][output["last_token_indices"][bi]]
-                )
+            for bi in range(inp["labels"].size(0)):
+                label = inp["labels"][bi]
+                pred = torch.argmax(outputs.logits[bi][inp["last_token_indices"][bi]])
 
                 if label == pred:
                     correct_count += 1

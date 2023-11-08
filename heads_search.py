@@ -72,7 +72,7 @@ def head_search(
             for layer in range(32)
         ]
     mean_activations = get_mean_activations(
-        model, tokenizer, modules, dataset, batch_size
+        model, tokenizer, modules, dataset_path, batch_size
     )
 
     results = defaultdict(dict)
