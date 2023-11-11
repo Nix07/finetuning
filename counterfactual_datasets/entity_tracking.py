@@ -4,6 +4,11 @@ import torch
 import pandas as pd
 import numpy as np
 
+seed = 10
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+
 def change_box_label(
     tokenizer,
     num_samples,
