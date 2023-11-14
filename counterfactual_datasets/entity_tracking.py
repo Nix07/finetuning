@@ -4,7 +4,7 @@ import torch
 import pandas as pd
 import numpy as np
 
-seed = 10
+seed = 30
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -1846,6 +1846,50 @@ def different_format_samples(
         all_source_input_last_pos,
         all_ctf_output_ids,
     )
+
+
+def random_samples(
+    tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
+):
+    with open(data_file) as f:
+        data = [json.loads(line) for line in f]
+
+    assert num_samples <= len(data)
+    prompts, incorrect_object_tokens, labels = [], [], []
+
+    existing_indices = []
+    for _ in range(num_samples):
+        i = random.randint(0, len(data))
+        while i in existing_indices:
+            i = random.randint(0, len(data))
+        existing_indices.append(i)
+        
+        label = data[i]["sentence"].split(" ")[-1][:-1]
+        prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
+        prompts.append(prompt)
+
+        # 0th index will be BOS token for llama-like tokenizer
+        if architecture in [
+            "AlignableLlamaForCausalLM",
+            "LLaMAForCausalLM",
+            "LlamaForCausalLM",
+            "LlaMAForCausalLM",
+        ]:
+            labels.append(tokenizer.encode(label)[1])
+        elif architecture == "GPT2LMHeadModel":
+            labels.append(tokenizer.encode(label)[0])
+        else:
+            raise ValueError(f"Unknown architecture {architecture}")
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    output_ids = torch.tensor(labels)
+
+    input_ids = input_tokens["input_ids"]
+    last_token_indices = last_token_indices
+    output_ids = output_ids
+
+    return input_ids, last_token_indices, output_ids
 
 
 def box_index_aligner_examples(
