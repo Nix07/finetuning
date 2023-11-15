@@ -1,7 +1,6 @@
 import torch
 import transformers
 import fire
-import numpy
 from functools import partial
 from baukit import TraceDict
 from tqdm import tqdm
@@ -58,24 +57,25 @@ def apply_pp(
                         rel_pos=rel_pos,
                     ),
                 ) as patched_cache:
-                    _ = model(base_tokens)
-
-                # Step 3
-                with TraceDict(
-                    model,
-                    receiver_layers,
-                    retain_input=True,
-                    edit_output=partial(
-                        patching_receiver_heads,
-                        model=model,
-                        base_tokens=base_tokens,
-                        patched_cache=patched_cache,
-                        receiver_heads=receiver_heads,
-                        clean_last_token_indices=base_last_token_indices,
-                        rel_pos=rel_pos,
-                    ),
-                ) as _:
                     patched_out = model(base_tokens)
+
+                if len(receiver_layers) != 0:
+                    # Step 3
+                    with TraceDict(
+                        model,
+                        receiver_layers,
+                        retain_input=True,
+                        edit_output=partial(
+                            patching_receiver_heads,
+                            model=model,
+                            base_tokens=base_tokens,
+                            patched_cache=patched_cache,
+                            receiver_heads=receiver_heads,
+                            clean_last_token_indices=base_last_token_indices,
+                            rel_pos=rel_pos,
+                        ),
+                    ) as _:
+                        patched_out = model(base_tokens)
 
                 for bi in range(batch_size):
                     logits = apply_softmax(
@@ -99,7 +99,7 @@ def pp_main(
     datafile: str = "../box_datasets/no_instructions/alternative/Random/7/train.jsonl",
     num_boxes: int = 7,
     model_name: str = "llama",
-    num_samples: int = 125,
+    num_samples: int = 100,
     n_value_fetcher: int = 20,
     n_pos_trans: int = 10,
     n_pos_detect: int = 10,
@@ -107,7 +107,6 @@ def pp_main(
     output_path: str = f"./results/",
     seed: int = 10,
 ):
-    output_path = output_path + f"{model_name}/"
     set_seed(seed)
 
     model, tokenizer = load_model_tokenizer(model_name)
@@ -155,7 +154,9 @@ def pp_main(
 
     # Compute Position Transformer Heads
     print("Computing Position Transformer Heads...")
-    receiver_layers = get_receiver_layers(receiver_heads=direct_logit_heads)
+    receiver_layers = get_receiver_layers(
+        model=model, receiver_heads=direct_logit_heads
+    )
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,
@@ -177,7 +178,9 @@ def pp_main(
 
     # Compute Position Detector Heads
     print("Computing Position Detector Heads...")
-    receiver_layers = get_receiver_layers(receiver_heads=heads_affect_direct_logit)
+    receiver_layers = get_receiver_layers(
+        model=model, receiver_heads=heads_affect_direct_logit
+    )
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,
@@ -199,7 +202,9 @@ def pp_main(
 
     # Compute Structural Reader Heads
     print("Computing Structural Reader Heads...")
-    receiver_layers = get_receiver_layers(receiver_heads=head_at_query_box_token)
+    receiver_layers = get_receiver_layers(
+        model=model, receiver_heads=head_at_query_box_token
+    )
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,

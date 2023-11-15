@@ -12,9 +12,9 @@ d_name_to_cmd = {}
 model_name = "goat"
 
 ## creating the jobs
-for _ in range(10):
+for _ in range(20):
     current_seed = np.random.randint(1000000)
-    results_path = os.path.join("results", f"{current_seed}")
+    results_path = os.path.join("results", f"{current_seed}/")
     datafile = "/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/7/train.jsonl"
 
     cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed}"

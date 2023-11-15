@@ -291,8 +291,24 @@ def patching_receiver_heads(
     return output
 
 
-def get_receiver_layers(receiver_heads):
-    receiver_layers = list(
-        set([f"model.layers.{layer}.self_attn.v_proj" for layer, _ in receiver_heads])
-    )
+def get_receiver_layers(model: AutoModelForCausalLM, receiver_heads: list):
+    if model.config.architectures[0] == "LlamaForCausalLM":
+        receiver_layers = list(
+            set(
+                [
+                    f"model.layers.{layer}.self_attn.v_proj"
+                    for layer, _ in receiver_heads
+                ]
+            )
+        )
+    else:
+        receiver_layers = list(
+            set(
+                [
+                    f"base_model.model.model.layers.{layer}.self_attn.v_proj"
+                    for layer, _ in receiver_heads
+                ]
+            )
+        )
+
     return receiver_layers
