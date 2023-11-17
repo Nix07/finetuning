@@ -1,6 +1,6 @@
-import torch
+import math
 import sys
-import transformers
+import torch
 from transformers import (
     AutoModelForCausalLM,
     LlamaForCausalLM,
@@ -9,18 +9,17 @@ from transformers import (
 from baukit import TraceDict
 from einops import rearrange, einsum
 from peft import PeftModel
+from datasets import Dataset
+from functools import partial
+from collections import defaultdict
+from tqdm import tqdm
 
 sys.path.append("/data/nikhil_prakash/anima-2.0/")
+sys.path.append("../")
 import analysis_utils
 from counterfactual_datasets.entity_tracking import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-seed = 10
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-transformers.set_seed(seed)
 
 
 def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True):
@@ -312,3 +311,416 @@ def get_receiver_layers(model: AutoModelForCausalLM, receiver_heads: list):
         )
 
     return receiver_layers
+
+
+def loal_eval_data(
+    tokenizer: LlamaTokenizer, datafile: str, num_samples: int, batch_size: int
+):
+    print(f"Loading dataset...")
+    raw_data = entity_tracking_example_sampler(
+        tokenizer=tokenizer,
+        num_samples=num_samples,
+        data_file=datafile,
+        few_shot=False,
+        alt_examples=True,
+        architecture="LlamaForCausalLM",
+    )
+    dataset = Dataset.from_dict(
+        {
+            "input_ids": raw_data[0],
+            "last_token_indices": raw_data[1],
+            "labels": raw_data[2],
+        }
+    ).with_format("torch")
+    data_loader = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=False
+    )
+
+    return data_loader
+
+
+def load_ablate_data(
+    tokenizer: LlamaTokenizer,
+    datafile: str,
+    num_samples: int,
+    batch_size: int,
+    num_boxes: int = 7,
+):
+    raw_data = generate_data_for_eval(
+        tokenizer=tokenizer,
+        num_samples=3500,
+        data_file=datafile,
+        num_boxes=7,
+    )
+
+    ablate_dataset = Dataset.from_dict(
+        {
+            "input_ids": raw_data[0],
+            "last_token_indices": raw_data[1],
+        }
+    ).with_format("torch")
+
+    ablate_dataloader = torch.utils.data.DataLoader(
+        ablate_dataset, batch_size=batch_size
+    )
+    return ablate_dataloader
+
+
+def get_mean_activations(
+    model: AutoModelForCausalLM,
+    tokenizer: LlamaTokenizer,
+    datafile: str,
+    num_samples: int,
+    batch_size: int,
+):
+    print("Computing mean activations...")
+    ablate_dataloader = load_ablate_data(
+        tokenizer=tokenizer,
+        datafile=datafile,
+        num_samples=num_samples,
+        batch_size=batch_size,
+    )
+
+    if model.config.architectures[0] == "LlamaForCausalLM":
+        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(32)]
+    else:
+        modules = [
+            f"base_model.model.model.layers.{layer}.self_attn.o_proj"
+            for layer in range(32)
+        ]
+
+    mean_activations = {}
+    with torch.no_grad():
+        # Assuming a single batch
+        for _, inp in enumerate(ablate_dataloader):
+            for k, v in inp.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inp[k] = v.to(model.device)
+
+            with TraceDict(model, modules, retain_input=True) as cache:
+                _ = model(inp["input_ids"])
+
+            for layer in modules:
+                if "self_attn" in layer:
+                    if layer in mean_activations:
+                        mean_activations[layer] += torch.mean(cache[layer].input, dim=0)
+                    else:
+                        mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
+                else:
+                    if layer in mean_activations:
+                        mean_activations[layer] += torch.mean(
+                            cache[layer].output, dim=0
+                        )
+                    else:
+                        mean_activations[layer] = torch.mean(cache[layer].output, dim=0)
+
+            del cache
+            torch.cuda.empty_cache()
+
+        for layer in modules:
+            mean_activations[layer] /= len(ablate_dataloader)
+
+    return mean_activations, modules
+
+
+def mean_ablate(
+    inputs=None,
+    output=None,
+    layer=None,
+    model: AutoModelForCausalLM = None,
+    circuit_components: dict = None,
+    mean_activations: dict = None,
+    input_tokens: torch.tensor = None,
+):
+    if isinstance(inputs, tuple):
+        inputs = inputs[0]
+
+    if isinstance(output, tuple):
+        output = output[0]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    mean_act = rearrange(
+        mean_activations[layer],
+        "seq_len (n_heads d_head) -> 1 seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    last_pos = inputs.size(1) - 1
+    for bi in range(inputs.size(0)):
+        prev_query_box_pos = analysis_utils.compute_prev_query_box_pos(
+            input_tokens[bi], input_tokens[bi].size(0) - 1
+        )
+        for token_pos in range(inputs.size(1)):
+            if (
+                token_pos != prev_query_box_pos
+                and token_pos != last_pos
+                and token_pos != last_pos - 2
+                and token_pos != prev_query_box_pos + 1
+            ):
+                inputs[bi, token_pos, :] = mean_act[0, token_pos, :]
+            elif token_pos == prev_query_box_pos:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[-1][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == prev_query_box_pos + 1:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[-2][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == last_pos:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[0][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+            elif token_pos == last_pos - 2:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[2][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[
+                            0, token_pos, head_idx
+                        ]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+        n_heads=model.config.num_attention_heads,
+    )
+    w_o = model.state_dict()[f"{layer}.weight"]
+    output = einsum(
+        inputs,
+        w_o,
+        "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model",
+    )
+
+    return output
+
+
+def eval(
+    model: AutoModelForCausalLM,
+    dataloader: torch.utils.data.DataLoader,
+    modules: list,
+    circuit_components: dict,
+    mean_activations: dict,
+):
+    correct_count, total_count = 0, 0
+    with torch.no_grad():
+        for _, inp in enumerate((dataloader)):
+            for k, v in inp.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inp[k] = v.to(model.device)
+
+            with TraceDict(
+                model,
+                modules,
+                retain_input=True,
+                edit_output=partial(
+                    mean_ablate,
+                    model=model,
+                    circuit_components=circuit_components,
+                    mean_activations=mean_activations,
+                    input_tokens=inp["input_ids"],
+                ),
+            ) as _:
+                outputs = model(inp["input_ids"])
+
+            for bi in range(inp["labels"].size(0)):
+                label = inp["labels"][bi]
+                pred = torch.argmax(outputs.logits[bi][inp["last_token_indices"][bi]])
+
+                if label == pred:
+                    correct_count += 1
+                total_count += 1
+
+            del outputs
+            torch.cuda.empty_cache()
+
+    current_acc = round(correct_count / total_count, 2)
+    # print(f"Task accuracy: {current_acc}")
+    return current_acc
+
+
+def get_circuit(
+    model: AutoModelForCausalLM,
+    circuit_root_path: str,
+    n_value_fetcher: int,
+    n_pos_trans: int,
+    n_pos_detect: int,
+    n_struct_read: int,
+):
+    circuit_components = {}
+    circuit_components[0] = defaultdict(list)
+    circuit_components[2] = defaultdict(list)
+    circuit_components[-1] = defaultdict(list)
+    circuit_components[-2] = defaultdict(list)
+
+    path = circuit_root_path + "/direct_logit_heads.pt"
+    logit_values = torch.load(path)
+    direct_logit_heads = analysis_utils.compute_topk_components(
+        torch.load(path), k=n_value_fetcher, largest=False
+    )
+
+    path = circuit_root_path + "/heads_affect_direct_logit.pt"
+    logit_values = torch.load(path)
+    heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
+        torch.load(path), k=n_pos_trans, largest=False
+    )
+
+    path = circuit_root_path + "/heads_at_query_box_pos.pt"
+    logit_values = torch.load(path)
+    head_at_query_box_token = analysis_utils.compute_topk_components(
+        torch.load(path), k=n_pos_detect, largest=False
+    )
+
+    path = circuit_root_path + "/heads_at_prev_query_box_pos.pt"
+    logit_values = torch.load(path)
+    heads_at_prev_box_pos = analysis_utils.compute_topk_components(
+        torch.load(path), k=n_struct_read, largest=False
+    )
+
+    intersection = []
+    for head in direct_logit_heads:
+        if head in heads_affecting_direct_logit_heads:
+            intersection.append(head)
+
+    for head in intersection:
+        direct_logit_heads.remove(head)
+
+    for layer_idx, head in direct_logit_heads:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in heads_affecting_direct_logit_heads:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in head_at_query_box_token:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[2][layer].append(head)
+
+    for layer_idx, head in heads_at_prev_box_pos:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[-1][layer].append(head)
+
+    return (
+        circuit_components,
+        direct_logit_heads,
+        heads_affecting_direct_logit_heads,
+        head_at_query_box_token,
+        heads_at_prev_box_pos,
+    )
+
+
+def compute_pair_drop_values(
+    model: AutoModelForCausalLM,
+    heads: list,
+    circuit_components: dict,
+    dataloader: torch.utils.data.DataLoader,
+    modules: list,
+    mean_activations: dict,
+    rel_pos: int = 0,
+):
+    greedy_res = defaultdict(lambda: defaultdict(float))
+
+    for layer_idx_1, head_1 in tqdm(heads):
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer_1 = f"model.layers.{layer_idx_1}.self_attn.o_proj"
+        else:
+            layer_1 = f"base_model.model.model.layers.{layer_idx_1}.self_attn.o_proj"
+
+        circuit_components[rel_pos][layer_1].remove(head_1)
+
+        for layer_idx_2, head_2 in heads:
+            if model.config.architectures[0] == "LlamaForCausalLM":
+                layer_2 = f"model.layers.{layer_idx_2}.self_attn.o_proj"
+            else:
+                layer_2 = (
+                    f"base_model.model.model.layers.{layer_idx_2}.self_attn.o_proj"
+                )
+
+            if greedy_res[(layer_2, head_2)][(layer_1, head_1)] > 0.0:
+                continue
+            if layer_1 is not layer_2 and head_1 is not head_2:
+                circuit_components[rel_pos][layer_2].remove(head_2)
+
+            greedy_res[(layer_1, head_1)][(layer_2, head_2)] = eval(
+                model, dataloader, modules, circuit_components, mean_activations
+            )
+            if layer_1 is not layer_2 and head_1 is not head_2:
+                circuit_components[rel_pos][layer_2].append(head_2)
+
+        circuit_components[rel_pos][layer_1].append(head_1)
+
+    res = defaultdict(lambda: defaultdict(float))
+    for k in greedy_res:
+        for k_2 in greedy_res[k]:
+            if greedy_res[k][k_2] > 0.0:
+                res[str(k)][str(k_2)] = greedy_res[k][k_2]
+                res[str(k_2)][str(k)] = greedy_res[k][k_2]
+
+    return res
+
+
+def get_head_significance_score(
+    model: AutoModelForCausalLM,
+    heads: list,
+    ranked: dict,
+    percentage: float,
+    circuit_components: dict,
+    dataloader: torch.utils.data.DataLoader,
+    modules: list,
+    mean_activations: dict,
+    rel_pos: int,
+):
+    res = {}
+
+    for layer_idx, head in tqdm(heads):
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+
+        for r in ranked[str((layer, head))][
+            : math.ceil(percentage * len(ranked.values()))
+        ]:
+            top_layer = r[0].split(",")[0][2:-1]
+            top_head = int(r[0].split(",")[1][:-1])
+            if r[1] <= 0:
+                break
+            circuit_components[rel_pos][top_layer].remove(top_head)
+
+        befor = eval(model, dataloader, modules, circuit_components, mean_activations)
+        circuit_components[rel_pos][layer].remove(head)
+        after = eval(model, dataloader, modules, circuit_components, mean_activations)
+        res[(layer, head)] = (befor, after)
+
+        for r in ranked[str((layer, head))][
+            : math.ceil(percentage * len(ranked.values()))
+        ]:
+            top_layer = r[0].split(",")[0][2:-1]
+            top_head = int(r[0].split(",")[1][:-1])
+            if r[1] <= 0:
+                break
+            circuit_components[rel_pos][top_layer].append(top_head)
+        circuit_components[rel_pos][layer].append(head)
+
+    return res
