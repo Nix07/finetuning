@@ -83,21 +83,22 @@ def minimality_main(
         len(struct_read_heads),
     )
 
-    idx = 2
-    for _, head_group in enumerate([pos_detect_heads]):
+    idx = 3
+    for _, head_group in enumerate([value_fetcher_heads]):
         print(f"{idx_to_group[idx]} Heads Started...")
-        data = compute_pair_drop_values(
-            model=model,
-            heads=head_group,
-            circuit_components=circuit_components,
-            dataloader=dataloader,
-            modules=modules,
-            mean_activations=mean_activations,
-            rel_pos=idx_to_pos[idx],
-        )
+        # data = compute_pair_drop_values(
+        #     model=model,
+        #     heads=head_group,
+        #     circuit_components=circuit_components,
+        #     dataloader=dataloader,
+        #     modules=modules,
+        #     mean_activations=mean_activations,
+        #     rel_pos=idx_to_pos[idx],
+        # )
         with open(f"{results_path}/{idx_to_filename[idx]}.json", "w") as f:
-            json.dump(data, f)
-        print("Completed Computing Pair Drop Values...")
+            # json.dump(data, f)
+            data = json.load(f)
+        # print("Completed Computing Pair Drop Values...")
 
         ranked = defaultdict(list)
         for k_1 in data:
@@ -122,7 +123,9 @@ def minimality_main(
             new_res[str(k)] = res[k]
 
         k = math.ceil(percentage * len(head_group))
-        with open(f"{results_path}/{idx_to_filename[idx]}_{k}_significance.json", "w") as f:
+        with open(
+            f"{results_path}/{idx_to_filename[idx]}_{k}_significance.json", "w"
+        ) as f:
             json.dump(new_res, f)
 
         print(f"{idx_to_group[idx]} Heads Completed...")
