@@ -189,6 +189,7 @@ def perf_metric(
 def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True):
     """Computes the topk most influential components (i.e. heads) for patching."""
     top_indices = torch.topk(patching_scores.flatten(), k, largest=largest).indices
+    top_values = torch.topk(patching_scores.flatten(), k, largest=largest).values
 
     # Convert the top_indices to 2D indices
     row_indices = top_indices // patching_scores.shape[1]
@@ -196,7 +197,7 @@ def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True)
     top_components = torch.stack((row_indices, col_indices), dim=1)
     # Get the top indices as a list of 2D indices (row, column)
     top_components = top_components.tolist()
-    return top_components
+    return top_components, top_values.tolist()
 
 
 def comparison_metric(eval_preds, eval_labels, incorrect_objects):
@@ -255,7 +256,7 @@ def get_circuit_components(model):
     circuit_components[-2] = defaultdict(list)
 
     root_path = "./new_pp_exps/reverse/7_boxes"
-    with open("circuit_heads.json", "r") as f:
+    with open("./minimality/new_circuit_heads.json", "r") as f:
         circuit_heads = json.load(f)
 
     direct_logit_heads = circuit_heads["direct_logit_heads"]
