@@ -26,7 +26,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(42)
 
 print("Loading model...")
-path = "/data/nikhil_prakash/llama_weights/7B"
+path = "/media/local_nikhil/disk/weights_naive/possessed-candle-14"
 tokenizer = AutoTokenizer.from_pretrained(path)
 model = AutoModelForCausalLM.from_pretrained(path).to(device)
 
