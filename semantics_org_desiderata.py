@@ -26,11 +26,31 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(42)
 
 print("Loading model...")
-path = "/media/local_nikhil/disk/weights_naive/possessed-candle-14"
+# path = "/media/local_nikhil/disk/weights_naive/possessed-candle-14"
+# tokenizer = LlamaTokenizer.from_pretrained(
+#     "hf-internal-testing/llama-tokenizer", padding_side="right"
+# )
+# model = AutoModelForCausalLM.from_pretrained(path).to(device)
+
+base_model = "decapoda-research/llama-7b-hf"
+lora_weights = "tiedong/goat-lora-7b"
+
 tokenizer = LlamaTokenizer.from_pretrained(
     "hf-internal-testing/llama-tokenizer", padding_side="right"
 )
-model = AutoModelForCausalLM.from_pretrained(path).to(device)
+model = LlamaForCausalLM.from_pretrained(
+    base_model,
+    load_in_8bit=False,
+    torch_dtype=torch.float32,
+    device_map="auto",
+)
+model = PeftModel.from_pretrained(
+    model,
+    lora_weights,
+    torch_dtype=torch.float32,
+    device_map={"": 0},
+)
+
 
 tokenizer.pad_token_id = tokenizer.eos_token_id
 print("Model loaded.")
@@ -138,7 +158,7 @@ for head_group in [
         results["llama"][head_group] = defaultdict(list)
 
     for desiderata in ["positional", "object_value", "box_label_value"]:
-        with open(f"./new_masks/llama-7b/{head_group}/{desiderata}/0.01.txt", "r") as f:
+        with open(f"./new_masks/goat-7b/{head_group}/{desiderata}/0.01.txt", "r") as f:
             data = f.readlines()
             heads = json.loads(data[0].split(": ")[1])
 
@@ -209,5 +229,5 @@ for head_group in [
             results["llama"][head_group][desiderata].append(acc)
 
             # Store results in json file
-            with open("naive_fine_tuned_semantic_results.json", "w") as f:
+            with open("goat_circuit_semantic_results.json", "w") as f:
                 json.dump(results, f, indent=4)

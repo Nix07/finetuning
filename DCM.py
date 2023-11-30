@@ -21,7 +21,7 @@ torch.manual_seed(42)
 
 # %%
 print("Loading model...")
-# path = "./llama_7b"
+# path = "/home/local_nikhil/Projects/llama_weights/7B"
 # tokenizer = AutoTokenizer.from_pretrained(path)
 # model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
 
@@ -45,6 +45,7 @@ model = PeftModel.from_pretrained(
 )
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
+circuit_path = "./minimality/new_circuit_heads.json"
 
 model.eval()
 for param in model.parameters():
@@ -242,7 +243,7 @@ for desideratum_name, desideratum_method in desiderata.items():
     desiderata_eval = [objValueFetcher_eval]
     desiderata_test = [objValueFetcher_test]
 
-    circuit_components, head_groups = analysis_utils.get_circuit_components(model)
+    circuit_components, head_groups = analysis_utils.get_circuit_components(model, circuit_path)
 
     if model.config.architectures[0] == "LlamaForCausalLM":
         modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(32)]
@@ -271,7 +272,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
-        save_path = f"./new_masks/goat-7b/{head_group_name}/{desideratum_name}/"
+        save_path = f"./new_masks/goat-7b_new/{head_group_name}/{desideratum_name}/"
 
         # check if the path exists
         if not os.path.exists(save_path):

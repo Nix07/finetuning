@@ -1,0 +1,2 @@
+Heads: [[18, 28], [14, 0]]
+Test Accuracy: 0.13

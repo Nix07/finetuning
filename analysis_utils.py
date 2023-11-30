@@ -18,9 +18,7 @@ torch.manual_seed(seed)
 def apply_causal_mask(attn_scores):
     ignore = torch.tensor(torch.finfo(attn_scores.dtype).min)
     mask = torch.triu(
-        torch.ones(
-            attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device
-        ),
+        torch.ones(attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device),
         diagonal=1,
     ).bool()
     attn_scores.masked_fill_(mask, ignore)
@@ -58,9 +56,7 @@ def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
             n_heads=model.config.num_attention_heads,
         )
 
-        ablation_heads_curr_layer = [
-            h for l_idx, h in ablation_heads if l_idx == layer_idx
-        ]
+        ablation_heads_curr_layer = [h for l_idx, h in ablation_heads if l_idx == layer_idx]
 
         for head in ablation_heads_curr_layer:
             for bi in range(batch_size):
@@ -206,9 +202,7 @@ def comparison_metric(eval_preds, eval_labels, incorrect_objects):
     # incorrect_objects: (#batch, #incorrect_objects)
     total_count = 0
     correct_count = 0
-    for pred, correct_object, incorrect_objs in zip(
-        eval_preds, eval_labels, incorrect_objects
-    ):
+    for pred, correct_object, incorrect_objs in zip(eval_preds, eval_labels, incorrect_objects):
         correctness = True
         for incorrect_object in incorrect_objs:
             if pred[correct_object] >= pred[incorrect_object]:
@@ -248,28 +242,23 @@ def compute_prev_query_box_pos(input_ids, last_token_index):
     return prev_query_box_token_pos
 
 
-def get_circuit_components(model):
+def get_circuit_components(model, circuit_path):
     circuit_components = {}
     circuit_components[0] = defaultdict(list)
     circuit_components[2] = defaultdict(list)
     circuit_components[-1] = defaultdict(list)
     circuit_components[-2] = defaultdict(list)
 
-    root_path = "./new_pp_exps/reverse/7_boxes"
-    with open("./minimality/new_circuit_heads.json", "r") as f:
+    with open(circuit_path, "r") as f:
         circuit_heads = json.load(f)
 
     direct_logit_heads = circuit_heads["direct_logit_heads"]
-    heads_affecting_direct_logit_heads = circuit_heads[
-        "heads_affecting_direct_logit_heads"
-    ]
+    heads_affecting_direct_logit_heads = circuit_heads["heads_affecting_direct_logit_heads"]
     head_at_query_box_token = circuit_heads["head_at_query_box_token"]
     heads_at_prev_box_pos = circuit_heads["heads_at_prev_box_pos"]
 
     print(f"Direct logit heads: {len(direct_logit_heads)}")
-    print(
-        f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}"
-    )
+    print(f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}")
     print(f"Heads at query box token: {len(head_at_query_box_token)}")
     print(f"Heads at prev query box token: {len(heads_at_prev_box_pos)}")
 
@@ -310,9 +299,7 @@ def get_circuit_components(model):
 
     for pos in circuit_components.keys():
         for layer_idx in circuit_components[pos].keys():
-            circuit_components[pos][layer_idx] = list(
-                set(circuit_components[pos][layer_idx])
-            )
+            circuit_components[pos][layer_idx] = list(set(circuit_components[pos][layer_idx]))
 
     return circuit_components, head_groups
 
@@ -413,9 +400,7 @@ def get_mean_activations(model, tokenizer, modules, data_file, batch_size):
                         mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
                 else:
                     if layer in mean_activations:
-                        mean_activations[layer] += torch.mean(
-                            cache[layer].output, dim=0
-                        )
+                        mean_activations[layer] += torch.mean(cache[layer].output, dim=0)
                     else:
                         mean_activations[layer] = torch.mean(cache[layer].output, dim=0)
 
@@ -471,27 +456,19 @@ def mean_ablate(
             elif token_pos == prev_query_box_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[-1][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
             elif token_pos == prev_query_box_pos + 1:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[-2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
             elif token_pos == last_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[0][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
             elif token_pos == last_pos - 2:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
 
     inputs = rearrange(
         inputs,
