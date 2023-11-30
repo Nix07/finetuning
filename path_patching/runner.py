@@ -9,15 +9,15 @@ print(job_path)
 os.makedirs(job_path, exist_ok=True)
 
 d_name_to_cmd = {}
-model_name = "goat"
+model_name = "llama"
 
 ## creating the jobs
-for _ in range(20):
-    current_seed = np.random.randint(1000000)
-    results_path = os.path.join("results", f"{current_seed}/")
+for _ in range(10):
+    current_seed = np.random.randint(100)
+    results_path = os.path.join("path_patching_results", f"{current_seed}/")
     datafile = "/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/7/train.jsonl"
 
-    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed}"
+    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed} --batch_size=100 --num_samples=500"
 
     d_name_to_cmd[current_seed] = cmd
 
@@ -27,7 +27,7 @@ for key in d_name_to_cmd:
         bash_template = f.readlines()
         bash_template.append(d_name_to_cmd[key])
 
-    with open(f"{job_path}/{key}.sh", "w") as f:
+    with open(f"{job_path}/seed_{key}.sh", "w") as f:
         f.writelines(bash_template)
 
 

@@ -34,10 +34,9 @@ def apply_pp(
     clean_logit_outputs: dict = None,
     hook_points: list = None,
     rel_pos: int = None,
-    batch_size: int = None,
 ):
     """
-    Applies Path Patching to the model and returns the patching scores for each head.
+    Applies Path Patching from all heads to receiver heads and returns the patching scores for each head.
 
     Args:
         model (AutoModelForCausalLM): Model to apply Path Patching to.
@@ -49,7 +48,6 @@ def apply_pp(
         clean_logit_outputs (dict): Clean logit outputs for the model.
         hook_points (list): List of hook points.
         rel_pos (int): Relative position of the receiver heads.
-        batch_size (int): Batch size for the model.
     """
 
     path_patching_score = torch.zeros(
@@ -61,11 +59,13 @@ def apply_pp(
         for head in range(model.config.num_attention_heads):
             with torch.no_grad():
                 for bi, inp in enumerate(dataloader):
+                    batch_size = inp["base_tokens"].shape[0]
+
                     for k, v in inp.items():
                         if v is not None and isinstance(v, torch.Tensor):
                             inp[k] = v.to(model.device)
 
-                    # Step 2: Patch the output of the sender head and store the input of the receiver head
+                    # Step 2: Patch the output of the sender head and store the input of the receiver heads
                     with TraceDict(
                         model,
                         hook_points + receiver_layers,
@@ -118,8 +118,8 @@ def apply_pp(
 
                         path_patching_score[layer, head] = score
 
-    del patched_out
-    torch.cuda.empty_cache()
+                    del patched_out, patched_cache, inp
+                    torch.cuda.empty_cache()
 
     return path_patching_score
 
@@ -158,6 +158,8 @@ def pp_main(
     set_seed(seed)
 
     model, tokenizer = get_model_and_tokenizer(model_name)
+    print("MODEL AND TOKENIZER LOADED")
+
     dataloader = load_dataloader(
         tokenizer=tokenizer,
         datafile=datafile,
@@ -165,6 +167,7 @@ def pp_main(
         num_boxes=num_boxes,
         batch_size=batch_size,
     )
+    print("DATALOADER CREATED")
 
     # Step 1: Compute clean and corrupt caches
     (
@@ -173,10 +176,10 @@ def pp_main(
         clean_logit_outputs,
         _,
         hook_points,
-    ) = get_caches(model, dataloader, batch_size)
+    ) = get_caches(model, dataloader)
 
     # Compute Value Fetcher Heads
-    print("Computing Value Fetcher Heads...")
+    print("COMPUTING VALUE FETCHER HEADS...")
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,
@@ -187,18 +190,17 @@ def pp_main(
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=0,
-        batch_size=batch_size,
     )
     torch.save(patching_scores, output_path + "direct_logit_heads.pt")
     value_fetcher_heads = compute_topk_components(
         patching_scores=patching_scores, k=n_value_fetcher, largest=False
     )
-    print(f"Value Fetcher Heads: {value_fetcher_heads}\n")
+    print(f"VALUE FETCHER HEADS: {value_fetcher_heads}\n")
 
     # Compute Position Transformer Heads
-    print("Computing Position Transmitter Heads...")
+    print("COMPUTING POSITION TRANSMITTER HEADS...")
     receiver_layers = get_receiver_layers(
-        model=model, receiver_heads=value_fetcher_heads
+        model=model, receiver_heads=value_fetcher_heads, composition="q"
     )
     patching_scores = apply_pp(
         model=model,
@@ -210,18 +212,17 @@ def pp_main(
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=0,
-        batch_size=batch_size,
     )
     torch.save(patching_scores, output_path + "heads_affect_direct_logit.pt")
     heads_affect_direct_logit = compute_topk_components(
         patching_scores=patching_scores, k=n_pos_trans, largest=False
     )
-    print(f"Position Transmitter Heads: {heads_affect_direct_logit}\n")
+    print(f"POSITION TRANSMITTER HEADS: {heads_affect_direct_logit}\n")
 
     # Compute Position Detector Heads
-    print("Computing Position Detector Heads...")
+    print("COMPUTING POSITION DETECTOR HEADS...")
     receiver_layers = get_receiver_layers(
-        model=model, receiver_heads=heads_affect_direct_logit
+        model=model, receiver_heads=heads_affect_direct_logit, composition="v"
     )
     patching_scores = apply_pp(
         model=model,
@@ -233,18 +234,17 @@ def pp_main(
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=2,
-        batch_size=batch_size,
     )
     torch.save(patching_scores, output_path + "heads_at_query_box_pos.pt")
     head_at_query_box_token = compute_topk_components(
         patching_scores=patching_scores, k=n_pos_detect, largest=False
     )
-    print(f"Position Detector Heads: {head_at_query_box_token}\n")
+    print(f"POSITION DETECTOR HEADS: {head_at_query_box_token}\n")
 
     # Compute Structural Reader Heads
-    print("Computing Structural Reader Heads...")
+    print("COMPUTING STRUCTURAL READER HEADS...")
     receiver_layers = get_receiver_layers(
-        model=model, receiver_heads=head_at_query_box_token
+        model=model, receiver_heads=head_at_query_box_token, composition="v"
     )
     patching_scores = apply_pp(
         model=model,
@@ -256,13 +256,12 @@ def pp_main(
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=-1,
-        batch_size=batch_size,
     )
     torch.save(patching_scores, output_path + "heads_at_prev_query_box_pos.pt")
     heads_at_prev_box_pos = compute_topk_components(
         patching_scores=patching_scores, k=n_struct_read, largest=False
     )
-    print(f"Structural Reader Heads: {heads_at_prev_box_pos}\n")
+    print(f"STRUCTURAL READER HEADS: {heads_at_prev_box_pos}\n")
 
 
 if __name__ == "__main__":

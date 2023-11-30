@@ -6,7 +6,7 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
 )
-from baukit import TraceDict
+from baukit import TraceDict, nethook
 from einops import rearrange, einsum
 from peft import PeftModel
 from datasets import Dataset
@@ -44,7 +44,6 @@ def get_model_and_tokenizer(model_name: str):
         model_name (str): Name of the model to load.
     """
 
-    print(f"Loading model...")
     tokenizer = LlamaTokenizer.from_pretrained(
         "hf-internal-testing/llama-tokenizer", padding_side="right"
     )
@@ -52,7 +51,7 @@ def get_model_and_tokenizer(model_name: str):
     tokenizer.padding_side = "right"
 
     if model_name == "llama":
-        path = "../llama_7b/"
+        path = "/data/nikhil_prakash/llama_weights/7B/"
         model = AutoModelForCausalLM.from_pretrained(path).to(device)
 
     elif model_name == "goat":
@@ -86,7 +85,7 @@ def load_dataloader(
     batch_size: int,
 ):
     """
-    Loads the data from the datafile and creates a dataloader.
+    Loads the data (original and counterfactual) from the datafile and creates a dataloader.
 
     Args:
         tokenizer: tokenizer to use.
@@ -95,7 +94,6 @@ def load_dataloader(
         num_boxes: number of boxes in the datafile.
         batch_size: batch size to use for the dataloader.
     """
-    print(f"Loading dataset...")
     raw_data = box_index_aligner_examples(
         tokenizer,
         num_samples=num_samples,
@@ -111,11 +109,6 @@ def load_dataloader(
     source_last_token_indices = raw_data[3]  # Corrupt last token indices
     correct_answer_token = raw_data[4]  # Correct answer token
 
-    base_tokens = torch.cat([t.unsqueeze(dim=0) for t in base_tokens], dim=0).to(device)
-    source_tokens = torch.cat([t.unsqueeze(dim=0) for t in source_tokens], dim=0).to(
-        device
-    )
-
     dataset = Dataset.from_dict(
         {
             "base_tokens": base_tokens,
@@ -125,7 +118,6 @@ def load_dataloader(
             "labels": correct_answer_token,
         }
     ).with_format("numpy")
-
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
     return dataloader
@@ -134,7 +126,6 @@ def load_dataloader(
 def get_caches(
     model: AutoModelForCausalLM,
     dataloader: torch.utils.data.DataLoader,
-    batch_size: int,
 ):
     """
     Computes the clean and corrupt caches for the model.
@@ -142,7 +133,6 @@ def get_caches(
     Args:
         model: model to compute the caches for.
         dataloader: dataloader containing clean and corrupt inputs.
-        batch_size: batch size of the dataloader.
     """
 
     if model.config.architectures[0] == "LlamaForCausalLM":
@@ -161,7 +151,9 @@ def get_caches(
     clean_logit_outputs, corrupt_logit_outputs = defaultdict(dict), defaultdict(dict)
 
     with torch.no_grad():
-        for bi, inp in tqdm(enumerate(dataloader)):
+        for bi, inp in tqdm(enumerate(dataloader), desc="Clean cache"):
+            batch_size = inp["base_tokens"].size(0)
+
             for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
                     inp[k] = v.to(model.device)
@@ -173,6 +165,11 @@ def get_caches(
             ) as cache:
                 output = model(inp["base_tokens"])
 
+            for k, v in cache.items():
+                if v is not None and isinstance(v, nethook.Trace):
+                    cache[k].input = v.input.to("cpu")
+                    cache[k].output = v.output.to("cpu")
+
             clean_cache[bi] = cache
             for i in range(batch_size):
                 logits = apply_softmax(
@@ -180,8 +177,9 @@ def get_caches(
                 )
                 clean_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
 
-            del output, cache, logits
+            del output, cache, logits, inp
             torch.cuda.empty_cache()
+        print("CLEAN CACHE COMPUTED")
 
         for bi, inp in tqdm(enumerate(dataloader)):
             for k, v in inp.items():
@@ -195,6 +193,11 @@ def get_caches(
             ) as cache:
                 output = model(inp["source_tokens"])
 
+            for k, v in cache.items():
+                if v is not None and isinstance(v, nethook.Trace):
+                    cache[k].input = v.input.to("cpu")
+                    cache[k].output = v.output.to("cpu")
+
             corrupt_cache[bi] = cache
             for i in range(batch_size):
                 logits = apply_softmax(
@@ -202,8 +205,9 @@ def get_caches(
                 )
                 corrupt_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
 
-            del output, cache, logits
+            del output, cache, logits, inp
             torch.cuda.empty_cache()
+        print("CORRUPT CACHE COMPUTED")
 
     return (
         clean_cache,
@@ -271,11 +275,12 @@ def patching_heads(
             layer_idx = int(layer.split(".")[2])
         else:
             layer_idx = int(layer.split(".")[4])
+
         if sender_layer == layer_idx:
             for bi in range(batch_size):
                 if rel_pos == -1:
                     # Computing the previous query box label token position
-                    clean_prev_box_label_pos = (
+                    sender_head_pos_in_clean = (
                         analysis_utils.compute_prev_query_box_pos(
                             base_tokens[bi], clean_last_token_indices[bi]
                         )
@@ -283,40 +288,55 @@ def patching_heads(
 
                     # Since, queery box is not present in the prompt, patch in
                     # the output of heads from any random box label token, i.e. `clean_prev_box_label_pos`
-                    corrupt_prev_box_label_pos = clean_prev_box_label_pos
+                    sender_head_pos_in_corrupt = random.choice(range(6, 49, 7))
                 else:
-                    clean_prev_box_label_pos = clean_last_token_indices[bi] - rel_pos
-                    corrupt_prev_box_label_pos = (
+                    # Computing the position from which clean patching should start
+                    # If rel_pos = 0, then patching should start from the last token
+                    # If rel_pos = 2, then patching should start from the third last token
+                    sender_head_pos_in_clean = clean_last_token_indices[bi] - rel_pos
+
+                    # Computing the position from which the output of the sender head should be patched
+                    sender_head_pos_in_corrupt = (
                         corrupt_last_token_indices[bi] - rel_pos
                     )
 
+                # Patch clean output to all the heads of this layer from the
+                # `sender_head_pos_in_clean` position to last token position,
+                # except the sender head which is patched from the
+                # `sender_head_pos_in_corrupt` position of the corrupt output
                 for pos in range(
-                    clean_prev_box_label_pos, clean_last_token_indices[bi] + 1
+                    sender_head_pos_in_clean, clean_last_token_indices[bi] + 1
                 ):
-                    for head_ind in range(model.config.num_attention_heads):
-                        if head_ind == sender_head and pos == clean_prev_box_label_pos:
+                    for head_idx in range(model.config.num_attention_heads):
+                        if head_idx == sender_head and pos == sender_head_pos_in_clean:
                             input[bi, pos, sender_head] = corrupt_head_outputs[
-                                bi, corrupt_prev_box_label_pos, sender_head
+                                bi, sender_head_pos_in_corrupt, sender_head
                             ]
                         else:
-                            input[bi, pos, head_ind] = clean_head_outputs[
-                                bi, pos, head_ind
+                            input[bi, pos, head_idx] = clean_head_outputs[
+                                bi, pos, head_idx
                             ]
 
         else:
             for bi in range(batch_size):
                 if rel_pos == -1:
                     # Computing the previous query box label token position
-                    clean_prev_box_label_pos = (
+                    sender_head_pos_in_clean = (
                         analysis_utils.compute_prev_query_box_pos(
                             base_tokens[bi], clean_last_token_indices[bi]
                         )
                     )
                 else:
-                    clean_prev_box_label_pos = clean_last_token_indices[bi] - rel_pos
+                    # Computing the position from which clean patching should start
+                    # If rel_pos = 0, then patching should start from the last token
+                    # If rel_pos = 2, then patching should start from the third last token (query box label token)
+                    sender_head_pos_in_clean = clean_last_token_indices[bi] - rel_pos
 
+                # Patch clean output to all the heads of this layer from the
+                # `sender_head_pos_in_clean` position to last token position
+                # since none of them are sender heads
                 for pos in range(
-                    clean_prev_box_label_pos, clean_last_token_indices[bi] + 1
+                    sender_head_pos_in_clean, clean_last_token_indices[bi] + 1
                 ):
                     input[bi, pos] = clean_head_outputs[bi, pos]
 
@@ -385,16 +405,17 @@ def patching_receiver_heads(
     for receiver_head in receiver_heads_in_curr_layer:
         for bi in range(batch_size):
             if rel_pos == -1:
-                # Computing the previous query box label token position
-                clean_prev_box_label_pos = analysis_utils.compute_prev_query_box_pos(
+                receiver_head_pos_in_clean = analysis_utils.compute_prev_query_box_pos(
                     base_tokens[bi], clean_last_token_indices[bi]
                 )
             else:
-                clean_prev_box_label_pos = clean_last_token_indices[bi] - rel_pos
+                receiver_head_pos_in_clean = clean_last_token_indices[bi] - rel_pos
 
-            output[bi, clean_prev_box_label_pos, receiver_head] = patched_head_outputs[
-                bi, clean_prev_box_label_pos, receiver_head
-            ]
+            # Patch the input of receiver heads (output of k_proj, q_proj, or v_proj)
+            # computed in the previous step
+            output[
+                bi, receiver_head_pos_in_clean, receiver_head
+            ] = patched_head_outputs[bi, receiver_head_pos_in_clean, receiver_head]
 
     output = rearrange(
         output,
@@ -405,12 +426,23 @@ def patching_receiver_heads(
     return output
 
 
-def get_receiver_layers(model: AutoModelForCausalLM, receiver_heads: list):
+def get_receiver_layers(
+    model: AutoModelForCausalLM, receiver_heads: list, composition: str
+):
+    """
+    Gets the receiver layers from the receiver heads.
+
+    Args:
+        model: model under invetigation.
+        receiver_heads: receiver heads.
+        composition: composition to use for the receiver heads (k/q/v).
+    """
+
     if model.config.architectures[0] == "LlamaForCausalLM":
         receiver_layers = list(
             set(
                 [
-                    f"model.layers.{layer}.self_attn.v_proj"
+                    f"model.layers.{layer}.self_attn.{composition}_proj"
                     for layer, _ in receiver_heads
                 ]
             )
@@ -419,7 +451,7 @@ def get_receiver_layers(model: AutoModelForCausalLM, receiver_heads: list):
         receiver_layers = list(
             set(
                 [
-                    f"base_model.model.model.layers.{layer}.self_attn.v_proj"
+                    f"base_model.model.model.layers.{layer}.self_attn.{composition}_proj"
                     for layer, _ in receiver_heads
                 ]
             )
