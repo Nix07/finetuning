@@ -44,7 +44,7 @@ def minimality_main(
 ):
     set_seed(seed)
 
-    model, tokenizer = load_model_tokenizer(model_name)
+    model, tokenizer = get_model_and_tokenizer(model_name)
     dataloader = loal_eval_data(
         tokenizer=tokenizer,
         datafile=datafile,

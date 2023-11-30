@@ -12,6 +12,7 @@ from peft import PeftModel
 from datasets import Dataset
 from functools import partial
 from collections import defaultdict
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 sys.path.append("/data/nikhil_prakash/anima-2.0/")
@@ -35,7 +36,14 @@ def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True)
     return top_components
 
 
-def load_model_tokenizer(model_name: str):
+def get_model_and_tokenizer(model_name: str):
+    """
+    Loads the model and tokenizer.
+
+    Args:
+        model_name (str): Name of the model to load.
+    """
+
     print(f"Loading model...")
     tokenizer = LlamaTokenizer.from_pretrained(
         "hf-internal-testing/llama-tokenizer", padding_side="right"
@@ -70,9 +78,23 @@ def load_model_tokenizer(model_name: str):
     return model, tokenizer
 
 
-def load_pp_data(
-    tokenizer: LlamaTokenizer, datafile: str, num_samples: int, num_boxes: int
+def load_dataloader(
+    tokenizer: LlamaTokenizer,
+    datafile: str,
+    num_samples: int,
+    num_boxes: int,
+    batch_size: int,
 ):
+    """
+    Loads the data from the datafile and creates a dataloader.
+
+    Args:
+        tokenizer: tokenizer to use.
+        datafile: path to the datafile.
+        num_samples: number of samples to use from the datafile.
+        num_boxes: number of boxes in the datafile.
+        batch_size: batch size to use for the dataloader.
+    """
     print(f"Loading dataset...")
     raw_data = box_index_aligner_examples(
         tokenizer,
@@ -83,22 +105,46 @@ def load_pp_data(
         alt_examples=True,
         num_ents_or_ops=num_boxes,
     )
-    base_tokens = raw_data[0]
-    base_last_token_indices = raw_data[1]
-    source_tokens = raw_data[2]
-    source_last_token_indices = raw_data[3]
-    correct_answer_token = raw_data[4]
+    base_tokens = raw_data[0]  # Clean inputs
+    base_last_token_indices = raw_data[1]  # Clean last token indices
+    source_tokens = raw_data[2]  # Corrupt inputs
+    source_last_token_indices = raw_data[3]  # Corrupt last token indices
+    correct_answer_token = raw_data[4]  # Correct answer token
 
-    return (
-        base_tokens,
-        base_last_token_indices,
-        source_tokens,
-        source_last_token_indices,
-        correct_answer_token,
+    base_tokens = torch.cat([t.unsqueeze(dim=0) for t in base_tokens], dim=0).to(device)
+    source_tokens = torch.cat([t.unsqueeze(dim=0) for t in source_tokens], dim=0).to(
+        device
     )
 
+    dataset = Dataset.from_dict(
+        {
+            "base_tokens": base_tokens,
+            "base_last_token_indices": base_last_token_indices,
+            "source_tokens": source_tokens,
+            "source_last_token_indices": source_last_token_indices,
+            "labels": correct_answer_token,
+        }
+    ).with_format("numpy")
 
-def get_caches(model: AutoModelForCausalLM, base_tokens: list, source_tokens: list):
+    dataloader = DataLoader(dataset, batch_size=batch_size)
+
+    return dataloader
+
+
+def get_caches(
+    model: AutoModelForCausalLM,
+    dataloader: torch.utils.data.DataLoader,
+    batch_size: int,
+):
+    """
+    Computes the clean and corrupt caches for the model.
+
+    Args:
+        model: model to compute the caches for.
+        dataloader: dataloader containing clean and corrupt inputs.
+        batch_size: batch size of the dataloader.
+    """
+
     if model.config.architectures[0] == "LlamaForCausalLM":
         hook_points = [
             f"model.layers.{layer}.self_attn.o_proj"
@@ -110,22 +156,62 @@ def get_caches(model: AutoModelForCausalLM, base_tokens: list, source_tokens: li
             for layer in range(model.config.num_hidden_layers)
         ]
 
+    apply_softmax = torch.nn.Softmax(dim=-1)
+    clean_cache, corrupt_cache = {}, {}
+    clean_logit_outputs, corrupt_logit_outputs = defaultdict(dict), defaultdict(dict)
+
     with torch.no_grad():
-        with TraceDict(
-            model,
-            hook_points,
-            retain_input=True,
-        ) as clean_cache:
-            _ = model(base_tokens)
+        for bi, inp in tqdm(enumerate(dataloader)):
+            for k, v in inp.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inp[k] = v.to(model.device)
 
-        with TraceDict(
-            model,
-            hook_points,
-            retain_input=True,
-        ) as corrupt_cache:
-            _ = model(source_tokens)
+            with TraceDict(
+                model,
+                hook_points,
+                retain_input=True,
+            ) as cache:
+                output = model(inp["base_tokens"])
 
-    return clean_cache, corrupt_cache, hook_points
+            clean_cache[bi] = cache
+            for i in range(batch_size):
+                logits = apply_softmax(
+                    output.logits[i, inp["base_last_token_indices"][i]]
+                )
+                clean_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
+
+            del output, cache, logits
+            torch.cuda.empty_cache()
+
+        for bi, inp in tqdm(enumerate(dataloader)):
+            for k, v in inp.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    inp[k] = v.to(model.device)
+
+            with TraceDict(
+                model,
+                hook_points,
+                retain_input=True,
+            ) as cache:
+                output = model(inp["source_tokens"])
+
+            corrupt_cache[bi] = cache
+            for i in range(batch_size):
+                logits = apply_softmax(
+                    output.logits[i, inp["source_last_token_indices"][i]]
+                )
+                corrupt_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
+
+            del output, cache, logits
+            torch.cuda.empty_cache()
+
+    return (
+        clean_cache,
+        corrupt_cache,
+        clean_logit_outputs,
+        corrupt_logit_outputs,
+        hook_points,
+    )
 
 
 def patching_heads(
@@ -141,13 +227,28 @@ def patching_heads(
     clean_last_token_indices: list = None,
     corrupt_last_token_indices: list = None,
     rel_pos: int = None,
+    batch_size: int = None,
 ):
     """
-    rel_pos: Represents the token position relative to the "real" (non-padded) last token in the sequence. All the heads at this position and subsequent positions need to patched from clean run, except the sender head at this position.
+    Patches the output of the sender head and stores the input of the receiver head.
+
+    Args:
+        inputs: inputs to the layer.
+        output: output of the layer.
+        layer: layer to patch.
+        model: model to patch.
+        clean_cache: clean cache of the model.
+        corrupt_cache: corrupt cache of the model.
+        base_tokens: clean inputs.
+        sender_layer: layer of the sender head.
+        sender_head: sender head.
+        clean_last_token_indices: clean last token indices.
+        corrupt_last_token_indices: corrupt last token indices.
+        rel_pos: relative position of the query box label token.
+        batch_size: batch size of the dataloader.
     """
 
     input = inputs[0]
-    batch_size = input.size(0)
 
     if "o_proj" in layer:
         input = rearrange(
@@ -244,8 +345,23 @@ def patching_receiver_heads(
     receiver_heads: list = None,
     clean_last_token_indices: list = None,
     rel_pos: int = None,
+    batch_size: int = None,
 ):
-    batch_size = output.size(0)
+    """
+    Patches the input of the receiver head, i.e. key, query or value vectors.
+
+    Args:
+        output: output of the layer.
+        layer: layer to patch.
+        model: model to patch.
+        base_tokens: clean inputs.
+        patched_cache: patched cache of the model.
+        receiver_heads: receiver heads.
+        clean_last_token_indices: clean last token indices.
+        rel_pos: relative position of the query box label token.
+        batch_size: batch size of the dataloader.
+    """
+
     if model.config.architectures[0] == "LlamaForCausalLM":
         receiver_heads_in_curr_layer = [
             h for l, h in receiver_heads if l == int(layer.split(".")[2])
@@ -266,7 +382,6 @@ def patching_receiver_heads(
         n_heads=model.config.num_attention_heads,
     )
 
-    # Patch in the output of the receiver heads from patched run
     for receiver_head in receiver_heads_in_curr_layer:
         for bi in range(batch_size):
             if rel_pos == -1:
@@ -503,7 +618,7 @@ def mean_ablate(
     return output
 
 
-def eval(
+def evaluate_performance(
     model: AutoModelForCausalLM,
     dataloader: torch.utils.data.DataLoader,
     modules: list,
@@ -662,7 +777,7 @@ def compute_pair_drop_values(
             if layer_1 is not layer_2 and head_1 is not head_2:
                 circuit_components[rel_pos][layer_2].remove(head_2)
 
-            greedy_res[(layer_1, head_1)][(layer_2, head_2)] = eval(
+            greedy_res[(layer_1, head_1)][(layer_2, head_2)] = evaluate_performance(
                 model, dataloader, modules, circuit_components, mean_activations
             )
             if layer_1 is not layer_2 and head_1 is not head_2:
@@ -708,9 +823,13 @@ def get_head_significance_score(
                 break
             circuit_components[rel_pos][top_layer].remove(top_head)
 
-        befor = eval(model, dataloader, modules, circuit_components, mean_activations)
+        befor = evaluate_performance(
+            model, dataloader, modules, circuit_components, mean_activations
+        )
         circuit_components[rel_pos][layer].remove(head)
-        after = eval(model, dataloader, modules, circuit_components, mean_activations)
+        after = evaluate_performance(
+            model, dataloader, modules, circuit_components, mean_activations
+        )
         res[(layer, head)] = (befor, after)
 
         for r in ranked[str((layer, head))][
