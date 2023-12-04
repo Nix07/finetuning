@@ -116,10 +116,12 @@ def apply_pp(
                             - (clean_logit_outputs[bi][i])
                         ) / clean_logit_outputs[bi][i]
 
-                        path_patching_score[layer, head] = score
+                        path_patching_score[layer, head] += score
 
                     del patched_out, patched_cache, inp
                     torch.cuda.empty_cache()
+
+                path_patching_score[layer, head] /= len(dataloader.dataset)
 
     return path_patching_score
 
@@ -161,6 +163,7 @@ def pp_main(
     print("MODEL AND TOKENIZER LOADED")
 
     dataloader = load_dataloader(
+        model=model,
         tokenizer=tokenizer,
         datafile=datafile,
         num_samples=num_samples,

@@ -9,6 +9,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+
 def change_box_label(
     tokenizer,
     num_samples,
@@ -321,7 +322,9 @@ def alter_box_object_association(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -339,10 +342,13 @@ def alter_box_object_association(
             + source_segment
             + (
                 ", "
-                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                if source_query_box_pos
+                != len(source_prompt.split(". ")[0].split(", ")) - 1
                 else ""
             )
-            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ", ".join(
+                source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :]
+            )
             + ". "
             + source_prompt.split(". ")[-1]
         )
@@ -352,13 +358,22 @@ def alter_box_object_association(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -401,7 +416,9 @@ def add_box_before_correct_segment(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -414,11 +431,13 @@ def add_box_before_correct_segment(
         source_segment = source_prompt.split(". ")[0].split(", ")[source_query_box_pos]
         if source_query_box_pos != 0:
             source_segment = (
-                "there are three additional boxes, Box PP, Box BB and Box AA, " + source_segment
+                "there are three additional boxes, Box PP, Box BB and Box AA, "
+                + source_segment
             )
         else:
             source_segment = (
-                "There are three additional boxes, Box PP, Box BB and Box AA, " + source_segment
+                "There are three additional boxes, Box PP, Box BB and Box AA, "
+                + source_segment
             )
         source_prompt = (
             ", ".join(source_prompt.split(". ")[0].split(", ")[:source_query_box_pos])
@@ -426,10 +445,13 @@ def add_box_before_correct_segment(
             + source_segment
             + (
                 ", "
-                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                if source_query_box_pos
+                != len(source_prompt.split(". ")[0].split(", ")) - 1
                 else ""
             )
-            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ", ".join(
+                source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :]
+            )
             + ". "
             + source_prompt.split(". ")[-1]
         )
@@ -439,13 +461,22 @@ def add_box_before_correct_segment(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -488,7 +519,9 @@ def add_raw_text_at_end(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -510,13 +543,22 @@ def add_raw_text_at_end(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -559,7 +601,9 @@ def add_raw_text_at_start(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -580,13 +624,22 @@ def add_raw_text_at_start(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -629,7 +682,9 @@ def add_segment_at_end(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -651,13 +706,22 @@ def add_segment_at_end(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -700,7 +764,9 @@ def add_segment_at_start(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -710,20 +776,31 @@ def add_segment_at_start(
             ][0]
             random_choices.remove(random_source_index)
 
-        source_prompt = "The apple is in Box O, " + source_prompt[0].lower() + source_prompt[1:]
+        source_prompt = (
+            "The apple is in Box O, " + source_prompt[0].lower() + source_prompt[1:]
+        )
         source_prompts.append(source_prompt)
 
         base_prompt = base_prompt.split(". ")[0]
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -766,7 +843,9 @@ def additional_token_btw_box_and_object(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -784,10 +863,13 @@ def additional_token_btw_box_and_object(
             + source_segment
             + (
                 ", "
-                if source_query_box_pos != len(source_prompt.split(". ")[0].split(", ")) - 1
+                if source_query_box_pos
+                != len(source_prompt.split(". ")[0].split(", ")) - 1
                 else ""
             )
-            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ", ".join(
+                source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :]
+            )
             + ". "
             + source_prompt.split(". ")[-1]
         )
@@ -797,13 +879,22 @@ def additional_token_btw_box_and_object(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -846,7 +937,9 @@ def diff_index_query_box(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -859,16 +952,27 @@ def diff_index_query_box(
         source_prompts.append(source_prompt)
 
         base_prompt = base_prompt.split(". ")[0]
-        correct_object = base_prompt.split(", ")[(source_query_box_pos + 1) % 7].split(" ")[1]
+        correct_object = base_prompt.split(", ")[(source_query_box_pos + 1) % 7].split(
+            " "
+        )[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -913,7 +1017,9 @@ def box_object_altered_order(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -933,7 +1039,9 @@ def box_object_altered_order(
             + ", "
             + source_segment
             + ", "
-            + ", ".join(source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :])
+            + ", ".join(
+                source_prompt.split(". ")[0].split(", ")[source_query_box_pos + 1 :]
+            )
             + ". "
             + source_prompt.split(". ")[-1]
         )
@@ -944,13 +1052,22 @@ def box_object_altered_order(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -995,7 +1112,9 @@ def add_comma_after_object(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -1012,13 +1131,22 @@ def add_comma_after_object(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -1063,7 +1191,9 @@ def remove_comma_desiderata(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -1080,13 +1210,22 @@ def remove_comma_desiderata(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -1128,7 +1267,9 @@ def box_label_value_desiderata(
         random.shuffle(random_choices)
         while True:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             if (
@@ -1146,13 +1287,22 @@ def box_label_value_desiderata(
         ]
         labels.append(tokenizer.encode(base_correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -1201,7 +1351,9 @@ def object_value_desiderata(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -1217,13 +1369,22 @@ def object_value_desiderata(
         correct_object = source_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -1272,7 +1433,9 @@ def positional_desiderata(
         random.shuffle(random_choices)
         while source_query_box_pos == base_query_box_pos:
             random_source_index = random.choice(random_choices)
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_query = source_prompt.split(". ")[-1]
             source_query_box_label = source_query.split(" ")[1]
             source_query_box_pos = [
@@ -1288,13 +1451,22 @@ def positional_desiderata(
         correct_object = base_prompt.split(", ")[source_query_box_pos].split(" ")[1]
         labels.append(tokenizer.encode(correct_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(labels)
@@ -1331,7 +1503,9 @@ def correct_object_position_fetcher_desiderata(
 
             random_source_index = random.choice(list(range(0, num_samples, num_boxes)))
             random_source_index += (j) % num_boxes
-            source_prompt = " ".join(data[random_source_index]["sentence"].split(" ")[:-1])
+            source_prompt = " ".join(
+                data[random_source_index]["sentence"].split(" ")[:-1]
+            )
             source_box_label = source_prompt.split(". ")[-1].split(" ")[1]
             # generate a random english alphabet in upper case
             random_alphabet = chr(random.randint(65, 90))
@@ -1355,9 +1529,9 @@ def correct_object_position_fetcher_desiderata(
                             + " bottle and "
                             + " ".join(source_segments[segment_idx].split(" ")[1:])
                         )
-                        source_segments[segment_idx] = source_segments[segment_idx].replace(
-                            " is", " are"
-                        )
+                        source_segments[segment_idx] = source_segments[
+                            segment_idx
+                        ].replace(" is", " are")
                     correct_object = source_segments[segment_idx].split(" ")[1]
                     # source_segments[segment_idx] = f"the table has Box {source_box_label}"
 
@@ -1392,7 +1566,9 @@ def correct_object_position_fetcher_desiderata(
                 #             + source_segments[segment_idx][1:]
                 #         )
 
-            source_prompt = ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+            source_prompt = (
+                ", ".join(source_segments) + ". " + source_prompt.split(". ")[-1]
+            )
             # source_prompt = source_prompt.replace(" in", " contained in")
             source_prompts.append(source_prompt)
 
@@ -1408,7 +1584,9 @@ def correct_object_position_fetcher_desiderata(
                         + " apple and "
                         + " ".join(base_segments[seg_idx].split(" ")[1:])
                     )
-                    base_segments[seg_idx] = base_segments[seg_idx].replace(" is", " are")
+                    base_segments[seg_idx] = base_segments[seg_idx].replace(
+                        " is", " are"
+                    )
 
             base_context = ", ".join(base_segments)
             base_query = base_query.replace(base_query_box_label, random_alphabet)
@@ -1417,13 +1595,22 @@ def correct_object_position_fetcher_desiderata(
             label = data[i + ((j) % num_boxes)]["sentence"].split(" ")[-1][:-1]
             base_labels.append(tokenizer.encode(label)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(base_labels)
@@ -1462,7 +1649,9 @@ def box_label_value_fetcher_desiderata(
             label = data[i + j]["sentence"].split(" ")[-1][:-1]
             base_labels.append(tokenizer.encode(label)[1])
 
-            prompt = " ".join(data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[:-2])
+            prompt = " ".join(
+                data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[:-2]
+            )
             context = prompt.split(". ")[0]
             query = prompt.split(". ")[-1]
             box_label = query.split(" ")[1]
@@ -1508,13 +1697,22 @@ def box_label_value_fetcher_desiderata(
             label = data[i + ((j + 1) % num_boxes)]["sentence"].split(" ")[-1][:-1]
             source_labels.append(tokenizer.encode(label)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(source_labels)
@@ -1558,20 +1756,31 @@ def correct_obj_value_fetcher_desiderata_2(
             context_segments = prompt.split(". ")[0].split(", ")
             for idx in range(len(context_segments)):
                 if box_label in context_segments[idx].split(" "):
-                    context_segments[idx] = context_segments[idx].replace(label, random_object)
+                    context_segments[idx] = context_segments[idx].replace(
+                        label, random_object
+                    )
 
             context = ", ".join(context_segments)
             prompt = context + ". " + prompt.split(". ")[-1]
             source_prompts.append(prompt)
             source_labels.append(tokenizer.encode(random_object)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(source_labels)
@@ -1635,13 +1844,22 @@ def correct_obj_value_fetcher_desiderata_1(
             label = data[random_data_index]["sentence"].split(" ")[-1][:-1]
             source_labels.append(tokenizer.encode(label)[1])
 
-    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")["input_ids"]
+    base_input_tokens = tokenizer(base_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     base_last_token_indices = (
-        tokenizer(base_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1) - 1
+        tokenizer(base_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
+        - 1
     )
-    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")["input_ids"]
+    source_input_tokens = tokenizer(source_prompts, padding=True, return_tensors="pt")[
+        "input_ids"
+    ]
     source_last_token_indices = (
-        tokenizer(source_prompts, padding=True, return_tensors="pt")["attention_mask"].sum(dim=1)
+        tokenizer(source_prompts, padding=True, return_tensors="pt")[
+            "attention_mask"
+        ].sum(dim=1)
         - 1
     )
     output_ids = torch.tensor(source_labels)
@@ -1703,6 +1921,44 @@ def object_alignment_example_sampler(
     )
 
 
+def get_samples_with_correct_prediction(
+    model,
+    tokenizer,
+    num_samples,
+    data_file,
+):
+    with open(data_file) as f:
+        dataset = [json.loads(line) for line in f]
+
+    assert num_samples <= len(dataset)
+    prompts, labels = [], []
+
+    for data in dataset:
+        prompt = " ".join(data["sentence"].split(" ")[:-1])
+        label = data["sentence"].split(" ")[-1][:-1]
+        input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(model.device)
+        logits = model(input_ids).logits
+        predictions = torch.argmax(logits[0, -1, :], dim=-1)
+        if predictions == tokenizer.encode(label)[1]:
+            prompts.append(prompt)
+            labels.append(tokenizer.encode(label)[1])
+
+        if len(prompts) >= num_samples:
+            break
+
+        del input_ids, logits, predictions
+        torch.cuda.empty_cache()
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    output_ids = torch.tensor(labels)
+
+    input_ids = input_tokens["input_ids"]
+    last_token_indices = last_token_indices
+
+    return input_ids, last_token_indices, output_ids
+
+
 def entity_tracking_example_sampler(
     tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
 ):
@@ -1725,7 +1981,9 @@ def entity_tracking_example_sampler(
             for segment in data[i]["sentence"].split(".")[0].split(", ")
         ]
         incorrect_objects.remove(label.lower())
-        incorrect_object_tokens.append([tokenizer.encode(obj)[1] for obj in incorrect_objects])
+        incorrect_object_tokens.append(
+            [tokenizer.encode(obj)[1] for obj in incorrect_objects]
+        )
 
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
         # if few_shot:
@@ -1787,7 +2045,9 @@ def random_label_samples_for_path_patching(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_ctf_output_ids += [output_ids[i + j]]
 
-            random_source_index = random.choice(list(range(0, num_samples, num_ents_or_ops)))
+            random_source_index = random.choice(
+                list(range(0, num_samples, num_ents_or_ops))
+            )
             random_source_index += (j + 1) % num_ents_or_ops
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
@@ -1863,7 +2123,7 @@ def random_samples(
         while i in existing_indices:
             i = random.randint(0, len(data))
         existing_indices.append(i)
-        
+
         label = data[i]["sentence"].split(" ")[-1][:-1]
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
         prompts.append(prompt)
@@ -1893,6 +2153,7 @@ def random_samples(
 
 
 def box_index_aligner_examples(
+    model,
     tokenizer,
     num_samples,
     data_file,
@@ -1926,43 +2187,20 @@ def box_index_aligner_examples(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_ctf_output_ids += [output_ids[i + j]]
 
-#             temp = []
-#             for ind in range(1, num_ents_or_ops):
-#                 temp += [output_ids[i + ((j + ind) % num_ents_or_ops)]]
-#             all_incorrect_output_ids += [temp]
-
-            random_source_index = random.choice(list(range(0, num_samples - ((j + 1) % num_ents_or_ops), num_ents_or_ops)))
+            random_source_index = random.choice(
+                list(
+                    range(0, num_samples - ((j + 1) % num_ents_or_ops), num_ents_or_ops)
+                )
+            )
             random_source_index += (j + 1) % num_ents_or_ops
             source_example = input_ids[random_source_index].clone()
 
-            # Generate a random english alphabet in upper case
+            # Change the query box label with a random alphabet
             random_alphabet = chr(random.randint(65, 90))
-            random_alphabet_token = tokenizer(random_alphabet, return_tensors="pt").input_ids[0, 1]
+            random_alphabet_token = tokenizer(
+                random_alphabet, return_tensors="pt"
+            ).input_ids[0, 1]
             source_example[-3] = random_alphabet_token
-
-            # Randomizing the box indices in the source example
-            # random_box_indices = np.random.choice(
-            #     list(range(num_ents_or_ops, 10)), size=num_ents_or_ops, replace=False
-            # )
-            # random_box = {
-            #     0: tokenizer(str(random_box_indices[0]), return_tensors="pt")
-            #     .input_ids[0, -1]
-            #     .item(),
-            #     1: tokenizer(str(random_box_indices[1]), return_tensors="pt")
-            #     .input_ids[0, -1]
-            #     .item(),
-            #     2: tokenizer(str(random_box_indices[2]), return_tensors="pt")
-            #     .input_ids[0, -1]
-            #     .item(),
-            # }
-            # for old_index, new_token in random_box.items():
-            #     old_token = tokenizer(str(old_index), return_tensors="pt").input_ids[
-            #         0, -1
-            #     ]
-            #     source_example = [
-            #         new_token if (token == old_token) else token
-            #         for token in source_example
-            #     ]
 
             all_source_input_ids += [source_example]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
@@ -2015,9 +2253,9 @@ def modified_box_name_alignment_example_sampler(
             all_base_input_last_pos += [last_token_indices[i + j]]
             all_exp_objects += [incorrect_object_ids[i + j]]
 
-            random_source_index = random.choice(range(0, num_samples, num_ents_or_ops)) + (
-                (j + 1) % num_ents_or_ops
-            )
+            random_source_index = random.choice(
+                range(0, num_samples, num_ents_or_ops)
+            ) + ((j + 1) % num_ents_or_ops)
             all_source_input_ids += [input_ids[random_source_index]]
             all_source_input_last_pos += [last_token_indices[random_source_index]]
 

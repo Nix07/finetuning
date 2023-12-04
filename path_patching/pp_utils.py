@@ -78,6 +78,7 @@ def get_model_and_tokenizer(model_name: str):
 
 
 def load_dataloader(
+    model: AutoModelForCausalLM,
     tokenizer: LlamaTokenizer,
     datafile: str,
     num_samples: int,
@@ -95,7 +96,8 @@ def load_dataloader(
         batch_size: batch size to use for the dataloader.
     """
     raw_data = box_index_aligner_examples(
-        tokenizer,
+        model=model,
+        tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,
         architecture="LLaMAForCausalLM",

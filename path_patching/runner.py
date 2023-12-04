@@ -4,9 +4,11 @@ import numpy as np
 
 # Submit slurm jobs for many tasks
 
-job_path = str(time.ctime()).replace(" ", "_")
-print(job_path)
+root_path = "/data/nikhil_prakash/anima-2.0/path_patching/"
+job_path = root_path + str(time.ctime()).replace(" ", "_")
 os.makedirs(job_path, exist_ok=True)
+results_directory = os.path.join(job_path, "path_patching_results")
+os.makedirs(results_directory, exist_ok=True)
 
 d_name_to_cmd = {}
 model_name = "llama"
@@ -14,10 +16,13 @@ model_name = "llama"
 ## creating the jobs
 for _ in range(10):
     current_seed = np.random.randint(100)
-    results_path = os.path.join("path_patching_results", f"{current_seed}/")
+    if current_seed in d_name_to_cmd:
+        continue
+    results_path = os.path.join(results_directory, f"{str(current_seed)}/")
+    os.makedirs(results_path, exist_ok=True)
     datafile = "/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/7/train.jsonl"
 
-    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed} --batch_size=100 --num_samples=500"
+    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed} --batch_size=100 --num_samples=100"
 
     d_name_to_cmd[current_seed] = cmd
 
