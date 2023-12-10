@@ -14,16 +14,23 @@ d_name_to_cmd = {}
 model_name = "llama"
 
 ## creating the jobs
-for _ in range(10):
-    current_seed = np.random.randint(100)
+i = 0
+while len(d_name_to_cmd.keys()) < 20:
+    if i == 0:
+        current_seed = 38
+    elif i == 1:
+        current_seed = 83
+    else:
+        current_seed = np.random.randint(100)
     if current_seed in d_name_to_cmd:
         continue
     results_path = os.path.join(results_directory, f"{str(current_seed)}/")
     os.makedirs(results_path, exist_ok=True)
     datafile = "/data/nikhil_prakash/anima-2.0/box_datasets/no_instructions/alternative/Random/7/train.jsonl"
 
-    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed} --batch_size=100 --num_samples=100"
+    cmd = f"python /data/nikhil_prakash/anima-2.0/path_patching/path_patching.py --datafile='{datafile}' --model_name='{model_name}' --output_path='{results_path}' --seed={current_seed} --batch_size=100 --num_samples=300"
 
+    i += 1
     d_name_to_cmd[current_seed] = cmd
 
 

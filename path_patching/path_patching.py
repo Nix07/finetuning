@@ -71,7 +71,7 @@ def apply_pp(
                         hook_points + receiver_layers,
                         retain_input=True,
                         edit_output=partial(
-                            patching_heads,
+                            patching_sender_heads,
                             model=model,
                             clean_cache=clean_cache[bi],
                             corrupt_cache=corrupt_cache[bi],
@@ -156,6 +156,18 @@ def pp_main(
         seed (int): Seed to use.
         batch_size (int): Batch size to use.
     """
+    # Print the arguments
+    print(f"DATAFILE: {datafile}")
+    print(f"NUM BOXES: {num_boxes}")
+    print(f"MODEL NAME: {model_name}")
+    print(f"NUM SAMPLES: {num_samples}")
+    print(f"VALUE FETCHER HEADS: {n_value_fetcher}")
+    print(f"POSITION TRANSMITTER HEADS: {n_pos_trans}")
+    print(f"POSITION DETECTOR HEADS: {n_pos_detect}")
+    print(f"STRUCTURAL READER HEADS: {n_struct_read}")
+    print(f"OUTPUT PATH: {output_path}")
+    print(f"SEED: {seed}")
+    print(f"BATCH SIZE: {batch_size}\n")
 
     set_seed(seed)
 

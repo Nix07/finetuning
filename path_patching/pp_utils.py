@@ -183,7 +183,7 @@ def get_caches(
             torch.cuda.empty_cache()
         print("CLEAN CACHE COMPUTED")
 
-        for bi, inp in tqdm(enumerate(dataloader)):
+        for bi, inp in tqdm(enumerate(dataloader), desc="Corrupt cache"):
             for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
                     inp[k] = v.to(model.device)
@@ -220,7 +220,7 @@ def get_caches(
     )
 
 
-def patching_heads(
+def patching_sender_heads(
     inputs=None,
     output=None,
     layer: str = None,
@@ -289,7 +289,8 @@ def patching_heads(
                     )
 
                     # Since, queery box is not present in the prompt, patch in
-                    # the output of heads from any random box label token, i.e. `clean_prev_box_label_pos`
+                    # the output of heads from any random box label token,
+                    # i.e. `clean_prev_box_label_pos`
                     sender_head_pos_in_corrupt = random.choice(range(6, 49, 7))
                 else:
                     # Computing the position from which clean patching should start
@@ -297,7 +298,8 @@ def patching_heads(
                     # If rel_pos = 2, then patching should start from the third last token
                     sender_head_pos_in_clean = clean_last_token_indices[bi] - rel_pos
 
-                    # Computing the position from which the output of the sender head should be patched
+                    # Computing the position from which the output of the sender
+                    # head should be patched
                     sender_head_pos_in_corrupt = (
                         corrupt_last_token_indices[bi] - rel_pos
                     )
@@ -393,6 +395,8 @@ def patching_receiver_heads(
             h for l, h in receiver_heads if l == int(layer.split(".")[4])
         ]
 
+    # `output` is the output of k_proj, q_proj, or v_proj, i.e. input of
+    # the receiver head
     output = rearrange(
         output,
         "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
@@ -414,7 +418,7 @@ def patching_receiver_heads(
                 receiver_head_pos_in_clean = clean_last_token_indices[bi] - rel_pos
 
             # Patch the input of receiver heads (output of k_proj, q_proj, or v_proj)
-            # computed in the previous step
+            # computed in the previous step of path patching
             output[
                 bi, receiver_head_pos_in_clean, receiver_head
             ] = patched_head_outputs[bi, receiver_head_pos_in_clean, receiver_head]

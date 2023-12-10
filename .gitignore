@@ -6,7 +6,7 @@ logs
 notebooks/figures/
 *.tsv
 *.out
-*results/
+results/
 *.sh
 results_notebook/
 logic_data/*.pkl
