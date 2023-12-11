@@ -1,6 +1,10 @@
+import json
+import random
+import numpy as np
 import math
 import torch
 import fire
+from collections import defaultdict
 
 from pp_utils import *
 
@@ -22,6 +26,12 @@ idx_to_pos = {0: -1, 1: 0, 2: 2, 3: 0}
 
 
 def set_seed(seed):
+    """
+    Sets the seed for random, numpy, and torch
+    
+    Args:
+        seed (int): seed value
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -42,6 +52,40 @@ def minimality_main(
     seed: int = 10,
     results_path: str = "./results/",
 ):
+    """
+    Computes the minimality scores for the heads in the model
+
+    Args:
+        datafile (str, optional): path to the datafile. Defaults to "../box_datasets/no_instructions/alternative/Random/7/train.jsonl".
+        circuit_root_path (str, optional): path to the circuit components. Defaults to None.
+        num_boxes (int, optional): number of boxes in the dataset. Defaults to 7.
+        model_name (str, optional): name of the model. Defaults to "llama".
+        num_samples (int, optional): number of samples in the dataset. Defaults to 100.
+        batch_size (int, optional): batch size. Defaults to 100.
+        n_value_fetcher (int, optional): number of value fetcher heads. Defaults to 66.
+        n_pos_trans (int, optional): number of position transmitter heads. Defaults to 15.
+        n_pos_detect (int, optional): number of position detector heads. Defaults to 30.
+        n_struct_read (int, optional): number of structure reader heads. Defaults to 5.
+        percentage (float, optional): percentage of heads to consider. Defaults to 0.3.
+        seed (int, optional): seed value. Defaults to 10.
+        results_path (str, optional): path to store the results. Defaults to "./results/".
+    """
+    # Print the arguments
+    print("Arguments:")
+    print(f"datafile: {datafile}")
+    print(f"circuit_root_path: {circuit_root_path}")
+    print(f"num_boxes: {num_boxes}")
+    print(f"model_name: {model_name}")
+    print(f"num_samples: {num_samples}")
+    print(f"batch_size: {batch_size}")
+    print(f"n_value_fetcher: {n_value_fetcher}")
+    print(f"n_pos_trans: {n_pos_trans}")
+    print(f"n_pos_detect: {n_pos_detect}")
+    print(f"n_struct_read: {n_struct_read}")
+    print(f"percentage: {percentage}")
+    print(f"seed: {seed}")
+    print(f"results_path: {results_path}")
+
     set_seed(seed)
 
     model, tokenizer = get_model_and_tokenizer(model_name)
@@ -83,7 +127,7 @@ def minimality_main(
         len(struct_read_heads),
     )
 
-    for idx, head_group in enumerate([value_fetcher_heads]):
+    for idx, head_group in enumerate([struct_read_heads, pos_trans_heads, pos_detect_heads, value_fetcher_heads]):
         print(f"{idx_to_group[idx]} Heads Started...")
         data = compute_pair_drop_values(
             model=model,

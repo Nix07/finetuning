@@ -507,6 +507,17 @@ def load_ablate_data(
     batch_size: int,
     num_boxes: int = 7,
 ):
+    """
+    Loads the dataset for ablation.
+
+    Args:
+        tokenizer: tokenizer to use.
+        datafile: path to the datafile.
+        num_samples: number of samples to use from the datafile.
+        batch_size: batch size to use for the dataloader.
+        num_boxes: number of boxes in the datafile.
+    """
+
     raw_data = get_data_for_mean_ablation(
         tokenizer=tokenizer,
         num_samples=3500,
@@ -534,6 +545,17 @@ def get_mean_activations(
     num_samples: int,
     batch_size: int,
 ):
+    """
+    Computes the mean activations of the model.
+
+    Args:
+        model: model under investigation.
+        tokenizer: tokenizer to use.
+        datafile: path to the datafile.
+        num_samples: number of samples to use from the datafile.
+        batch_size: batch size to use for the dataloader.
+    """
+
     print("Computing mean activations...")
     ablate_dataloader = load_ablate_data(
         tokenizer=tokenizer,
@@ -552,8 +574,7 @@ def get_mean_activations(
 
     mean_activations = {}
     with torch.no_grad():
-        # Assuming a single batch
-        for _, inp in enumerate(ablate_dataloader):
+        for _, inp in enumerate(tqdm(ablate_dataloader)):
             for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
                     inp[k] = v.to(model.device)
@@ -562,18 +583,11 @@ def get_mean_activations(
                 _ = model(inp["input_ids"])
 
             for layer in modules:
-                if "self_attn" in layer:
+                if "o_proj" in layer:
                     if layer in mean_activations:
                         mean_activations[layer] += torch.mean(cache[layer].input, dim=0)
                     else:
                         mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
-                else:
-                    if layer in mean_activations:
-                        mean_activations[layer] += torch.mean(
-                            cache[layer].output, dim=0
-                        )
-                    else:
-                        mean_activations[layer] = torch.mean(cache[layer].output, dim=0)
 
             del cache
             torch.cuda.empty_cache()
@@ -596,9 +610,6 @@ def mean_ablate(
     if isinstance(inputs, tuple):
         inputs = inputs[0]
 
-    if isinstance(output, tuple):
-        output = output[0]
-
     inputs = rearrange(
         inputs,
         "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
@@ -607,7 +618,7 @@ def mean_ablate(
 
     mean_act = rearrange(
         mean_activations[layer],
-        "seq_len (n_heads d_head) -> 1 seq_len n_heads d_head",
+        "seq_len (n_heads d_head) -> seq_len n_heads d_head",
         n_heads=model.config.num_attention_heads,
     )
 
@@ -619,35 +630,25 @@ def mean_ablate(
         for token_pos in range(inputs.size(1)):
             if (
                 token_pos != prev_query_box_pos
-                and token_pos != last_pos
                 and token_pos != last_pos - 2
-                and token_pos != prev_query_box_pos + 1
+                and token_pos != last_pos
             ):
-                inputs[bi, token_pos, :] = mean_act[0, token_pos, :]
+                inputs[bi, token_pos, :] = mean_act[token_pos, :]
+            
             elif token_pos == prev_query_box_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[-1][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
-            elif token_pos == prev_query_box_pos + 1:
-                for head_idx in range(model.config.num_attention_heads):
-                    if head_idx not in circuit_components[-2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
-            elif token_pos == last_pos:
-                for head_idx in range(model.config.num_attention_heads):
-                    if head_idx not in circuit_components[0][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
+            
             elif token_pos == last_pos - 2:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[
-                            0, token_pos, head_idx
-                        ]
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
+            
+            elif token_pos == last_pos:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[0][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
 
     inputs = rearrange(
         inputs,
@@ -671,6 +672,17 @@ def evaluate_performance(
     circuit_components: dict,
     mean_activations: dict,
 ):
+    """
+    Evaluates the performance of the model.
+
+    Args:
+        model: model under investigation.
+        dataloader: dataloader containing clean and corrupt inputs.
+        modules: modules to patch.
+        circuit_components: circuit components.
+        mean_activations: mean activations of the model.
+    """
+
     correct_count, total_count = 0, 0
     with torch.no_grad():
         for _, inp in enumerate((dataloader)):
@@ -716,33 +728,40 @@ def get_circuit(
     n_pos_detect: int,
     n_struct_read: int,
 ):
+    """
+    Computes the circuit components.
+
+    Args:
+        model: model under investigation.
+        circuit_root_path: path to the circuit components.
+        n_value_fetcher: number of value fetcher heads.
+        n_pos_trans: number of position transformer heads.
+        n_pos_detect: number of position detector heads.
+        n_struct_read: number of structure reader heads.
+    """
+
     circuit_components = {}
     circuit_components[0] = defaultdict(list)
     circuit_components[2] = defaultdict(list)
     circuit_components[-1] = defaultdict(list)
-    circuit_components[-2] = defaultdict(list)
 
     path = circuit_root_path + "/direct_logit_heads.pt"
-    logit_values = torch.load(path)
-    direct_logit_heads = analysis_utils.compute_topk_components(
+    direct_logit_heads = compute_topk_components(
         torch.load(path), k=n_value_fetcher, largest=False
     )
 
     path = circuit_root_path + "/heads_affect_direct_logit.pt"
-    logit_values = torch.load(path)
-    heads_affecting_direct_logit_heads = analysis_utils.compute_topk_components(
+    heads_affecting_direct_logit_heads = compute_topk_components(
         torch.load(path), k=n_pos_trans, largest=False
     )
 
     path = circuit_root_path + "/heads_at_query_box_pos.pt"
-    logit_values = torch.load(path)
-    head_at_query_box_token = analysis_utils.compute_topk_components(
+    head_at_query_box_token = compute_topk_components(
         torch.load(path), k=n_pos_detect, largest=False
     )
 
     path = circuit_root_path + "/heads_at_prev_query_box_pos.pt"
-    logit_values = torch.load(path)
-    heads_at_prev_box_pos = analysis_utils.compute_topk_components(
+    heads_at_prev_box_pos = compute_topk_components(
         torch.load(path), k=n_struct_read, largest=False
     )
 
@@ -800,6 +819,19 @@ def compute_pair_drop_values(
     mean_activations: dict,
     rel_pos: int = 0,
 ):
+    """
+    Computes the pair drop values for the given heads.
+
+    Args:
+        model: model under investigation.
+        heads: heads to compute the pair drop values for.
+        circuit_components: circuit components.
+        dataloader: dataloader containing clean and corrupt inputs.
+        modules: modules to patch.
+        mean_activations: mean activations of the model.
+        rel_pos: relative position of the query box label token.
+    """
+
     greedy_res = defaultdict(lambda: defaultdict(float))
 
     for layer_idx_1, head_1 in tqdm(heads):
@@ -852,6 +884,21 @@ def get_head_significance_score(
     mean_activations: dict,
     rel_pos: int,
 ):
+    """
+    Computes the head significance score for the given heads.
+
+    Args:
+        model: model under investigation.
+        heads: heads to compute the pair drop values for.
+        ranked: ranked pair drop values.
+        percentage: percentage of heads to use for computing the head significance score.
+        circuit_components: circuit components.
+        dataloader: dataloader containing clean and corrupt inputs.
+        modules: modules to patch.
+        mean_activations: mean activations of the model.
+        rel_pos: relative position of the query box label token.
+    """
+
     res = {}
 
     for layer_idx, head in tqdm(heads):

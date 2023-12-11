@@ -9,13 +9,16 @@ from functools import partial
 from baukit import TraceDict
 from einops import rearrange, einsum
 from collections import defaultdict
+from datasets import Dataset
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from peft import PeftModel
 import pickle
 import fire
 
-from analysis_utils import *
+from analysis_utils import entity_tracking_example_sampler, eval
+from path_patching.pp_utils import get_mean_activations, compute_topk_components
 from counterfactual_datasets.entity_tracking import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,10 +33,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def head_search(
-    model_name: str,
-    dataset_path: str,
-    root_path: str,
+    model_name: str = "/home/local_nikhil/Projects/llama_weights/7B",
+    dataset_path: str = "./box_datasets/no_instructions/alternative/Random/7/train.jsonl",
+    root_path: str = "/home/local_nikhil/Projects/Anima-2.0/path_patching/Sat_Dec__9_15:16:21_2023/path_patching_results/20",
     batch_size: int = 50,
+    num_samples: int = 500,
 ):
     print(f"Loading model {model_name}")
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
@@ -46,7 +50,7 @@ def head_search(
     print(f"Loading dataset {dataset_path}")
     raw_data = entity_tracking_example_sampler(
         tokenizer=tokenizer,
-        num_samples=500,
+        num_samples=num_samples,
         data_file=dataset_path,
         architecture="LLaMAForCausalLM",
     )
@@ -69,39 +73,38 @@ def head_search(
             f"base_model.model.model.layers.{layer}.self_attn.o_proj"
             for layer in range(model.config.num_attention_heads)
         ]
-    mean_activations = get_mean_activations(
-        model, tokenizer, modules, dataset_path, batch_size
+    mean_activations, _ = get_mean_activations(
+        model=model, tokenizer=tokenizer, datafile=dataset_path, num_samples=num_samples, batch_size=batch_size
     )
 
     results = defaultdict(dict)
-    for n_value_fetcher in tqdm(range(20, 55, 5), desc="value_fetcher"):
-        for n_pos_trans in range(5, 25, 5):
-            for n_pos_detect in range(5, 35, 5):
-                for n_struct_read in range(0, 5, 5):
+    for n_value_fetcher in tqdm(range(30, 65, 5), desc="value_fetcher"):
+        for n_pos_trans in range(5, 20, 5):
+            for n_pos_detect in range(15, 45, 5):
+                for n_struct_read in range(0, 10, 5):
                     circuit_components = {}
                     circuit_components[0] = defaultdict(list)
                     circuit_components[2] = defaultdict(list)
                     circuit_components[-1] = defaultdict(list)
-                    circuit_components[-2] = defaultdict(list)
 
                     path = root_path + "/direct_logit_heads.pt"
 
-                    direct_logit_heads, _ = compute_topk_components(
+                    direct_logit_heads = compute_topk_components(
                         torch.load(path), k=n_value_fetcher, largest=False
                     )
 
                     path = root_path + "/heads_affect_direct_logit.pt"
-                    heads_affecting_direct_logit_heads, _ = compute_topk_components(
+                    heads_affecting_direct_logit_heads = compute_topk_components(
                         torch.load(path), k=n_pos_trans, largest=False
                     )
 
                     path = root_path + "/heads_at_query_box_pos.pt"
-                    head_at_query_box_token, _ = compute_topk_components(
+                    head_at_query_box_token = compute_topk_components(
                         torch.load(path), k=n_pos_detect, largest=False
                     )
 
                     path = root_path + "/heads_at_prev_query_box_pos.pt"
-                    heads_at_prev_box_pos, _ = compute_topk_components(
+                    heads_at_prev_box_pos = compute_topk_components(
                         torch.load(path), k=n_struct_read, largest=False
                     )
 

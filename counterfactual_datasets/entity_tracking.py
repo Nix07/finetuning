@@ -270,8 +270,8 @@ def get_data_for_mean_ablation(
     # with random query box label
     for i in range(0, num_samples, num_boxes):
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
-        random_alphabet = chr(random.randint(65, 90))
         prompt_query = prompt.split(". ", maxsplit=1)[-1]
+        random_alphabet = chr(random.randint(65, 90))
         prompt_query = (
             prompt_query.split(" ")[0]
             + " "
