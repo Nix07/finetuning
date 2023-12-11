@@ -32,9 +32,9 @@ def minimality_main(
     circuit_root_path: str = None,
     num_boxes: int = 7,
     model_name: str = "llama",
-    num_samples: int = 300,
-    batch_size: int = 50,
-    n_value_fetcher: int = 50,
+    num_samples: int = 100,
+    batch_size: int = 100,
+    n_value_fetcher: int = 66,
     n_pos_trans: int = 15,
     n_pos_detect: int = 30,
     n_struct_read: int = 5,
@@ -83,21 +83,19 @@ def minimality_main(
         len(struct_read_heads),
     )
 
-    idx = 3
-    for _, head_group in enumerate([value_fetcher_heads]):
+    for idx, head_group in enumerate([value_fetcher_heads]):
         print(f"{idx_to_group[idx]} Heads Started...")
-        # data = compute_pair_drop_values(
-        #     model=model,
-        #     heads=head_group,
-        #     circuit_components=circuit_components,
-        #     dataloader=dataloader,
-        #     modules=modules,
-        #     mean_activations=mean_activations,
-        #     rel_pos=idx_to_pos[idx],
-        # )
+        data = compute_pair_drop_values(
+            model=model,
+            heads=head_group,
+            circuit_components=circuit_components,
+            dataloader=dataloader,
+            modules=modules,
+            mean_activations=mean_activations,
+            rel_pos=idx_to_pos[idx],
+        )
         with open(f"{results_path}/{idx_to_filename[idx]}.json", "w") as f:
-            # json.dump(data, f)
-            data = json.load(f)
+            json.dump(data, f)
         # print("Completed Computing Pair Drop Values...")
 
         ranked = defaultdict(list)

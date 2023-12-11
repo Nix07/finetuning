@@ -469,13 +469,21 @@ def get_receiver_layers(
 def loal_eval_data(
     tokenizer: LlamaTokenizer, datafile: str, num_samples: int, batch_size: int
 ):
+    """
+    Loads the dataset for evaluation.
+
+    Args:
+        tokenizer: tokenizer to use.
+        datafile: path to the datafile.
+        num_samples: number of samples to use from the datafile.
+        batch_size: batch size to use for the dataloader.
+    """
+
     print(f"Loading dataset...")
     raw_data = entity_tracking_example_sampler(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,
-        few_shot=False,
-        alt_examples=True,
         architecture="LlamaForCausalLM",
     )
     dataset = Dataset.from_dict(
@@ -499,7 +507,7 @@ def load_ablate_data(
     batch_size: int,
     num_boxes: int = 7,
 ):
-    raw_data = generate_data_for_eval(
+    raw_data = get_data_for_mean_ablation(
         tokenizer=tokenizer,
         num_samples=3500,
         data_file=datafile,
@@ -535,11 +543,11 @@ def get_mean_activations(
     )
 
     if model.config.architectures[0] == "LlamaForCausalLM":
-        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(32)]
+        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)]
     else:
         modules = [
             f"base_model.model.model.layers.{layer}.self_attn.o_proj"
-            for layer in range(32)
+            for layer in range(model.config.num_hidden_layers)
         ]
 
     mean_activations = {}

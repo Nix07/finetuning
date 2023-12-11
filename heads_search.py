@@ -20,7 +20,7 @@ from counterfactual_datasets.entity_tracking import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-seed = 10
+seed = 20
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -48,8 +48,6 @@ def head_search(
         tokenizer=tokenizer,
         num_samples=500,
         data_file=dataset_path,
-        few_shot=False,
-        alt_examples=True,
         architecture="LLaMAForCausalLM",
     )
     dataset = Dataset.from_dict(
@@ -65,21 +63,21 @@ def head_search(
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
     if model.config.architectures[0] == "LlamaForCausalLM":
-        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(32)]
+        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_attention_heads)]
     else:
         modules = [
             f"base_model.model.model.layers.{layer}.self_attn.o_proj"
-            for layer in range(32)
+            for layer in range(model.config.num_attention_heads)
         ]
     mean_activations = get_mean_activations(
         model, tokenizer, modules, dataset_path, batch_size
     )
 
     results = defaultdict(dict)
-    for n_value_fetcher in tqdm(range(30, 75, 5), desc="value_fetcher"):
-        for n_pos_trans in range(0, 25, 5):
-            for n_pos_detect in range(10, 45, 5):
-                for n_struct_read in range(0, 15, 5):
+    for n_value_fetcher in tqdm(range(20, 55, 5), desc="value_fetcher"):
+        for n_pos_trans in range(5, 25, 5):
+            for n_pos_detect in range(5, 35, 5):
+                for n_struct_read in range(0, 5, 5):
                     circuit_components = {}
                     circuit_components[0] = defaultdict(list)
                     circuit_components[2] = defaultdict(list)
@@ -88,22 +86,22 @@ def head_search(
 
                     path = root_path + "/direct_logit_heads.pt"
 
-                    direct_logit_heads = compute_topk_components(
+                    direct_logit_heads, _ = compute_topk_components(
                         torch.load(path), k=n_value_fetcher, largest=False
                     )
 
                     path = root_path + "/heads_affect_direct_logit.pt"
-                    heads_affecting_direct_logit_heads = compute_topk_components(
+                    heads_affecting_direct_logit_heads, _ = compute_topk_components(
                         torch.load(path), k=n_pos_trans, largest=False
                     )
 
                     path = root_path + "/heads_at_query_box_pos.pt"
-                    head_at_query_box_token = compute_topk_components(
+                    head_at_query_box_token, _ = compute_topk_components(
                         torch.load(path), k=n_pos_detect, largest=False
                     )
 
                     path = root_path + "/heads_at_prev_query_box_pos.pt"
-                    heads_at_prev_box_pos = compute_topk_components(
+                    heads_at_prev_box_pos, _ = compute_topk_components(
                         torch.load(path), k=n_struct_read, largest=False
                     )
 

@@ -358,7 +358,7 @@ def compute_heads_from_mask(model, mask_dict, rounded):
 
 
 def get_ablation_data(tokenizer, data_file, batch_size):
-    raw_data = generate_data_for_eval(
+    raw_data = get_data_for_mean_ablation(
         tokenizer=tokenizer,
         num_samples=3500,
         data_file=data_file,
@@ -383,26 +383,20 @@ def get_mean_activations(model, tokenizer, modules, data_file, batch_size):
 
     mean_activations = {}
     with torch.no_grad():
-        # Assuming a single batch
-        for _, output in enumerate(ablate_dataloader):
-            for k, v in output.items():
+        for _, inp in enumerate(ablate_dataloader):
+            for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
-                    output[k] = v.to(model.device)
+                    inp[k] = v.to(model.device)
 
             with TraceDict(model, modules, retain_input=True) as cache:
-                _ = model(output["input_ids"])
+                _ = model(inp["input_ids"])
 
             for layer in modules:
-                if "self_attn" in layer:
+                if "o_proj" in layer:
                     if layer in mean_activations:
                         mean_activations[layer] += torch.mean(cache[layer].input, dim=0)
                     else:
                         mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
-                else:
-                    if layer in mean_activations:
-                        mean_activations[layer] += torch.mean(cache[layer].output, dim=0)
-                    else:
-                        mean_activations[layer] = torch.mean(cache[layer].output, dim=0)
 
             del cache
             torch.cuda.empty_cache()
@@ -425,9 +419,6 @@ def mean_ablate(
     if isinstance(inputs, tuple):
         inputs = inputs[0]
 
-    if isinstance(output, tuple):
-        output = output[0]
-
     inputs = rearrange(
         inputs,
         "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
@@ -436,39 +427,34 @@ def mean_ablate(
 
     mean_act = rearrange(
         mean_activations[layer],
-        "seq_len (n_heads d_head) -> 1 seq_len n_heads d_head",
+        "seq_len (n_heads d_head) -> seq_len n_heads d_head",
         n_heads=model.config.num_attention_heads,
     )
 
-    last_pos = inputs.size(1) - 1
+    seq_len = inputs.size(1) - 1
     for bi in range(inputs.size(0)):
         prev_query_box_pos = compute_prev_query_box_pos(
             input_tokens[bi], input_tokens[bi].size(0) - 1
         )
-        for token_pos in range(inputs.size(1)):
+        for token_pos in range(seq_len):
             if (
-                token_pos != prev_query_box_pos
-                and token_pos != last_pos
-                and token_pos != last_pos - 2
-                and token_pos != prev_query_box_pos + 1
+                token_pos != seq_len
+                and token_pos != seq_len - 2
+                and token_pos != prev_query_box_pos
             ):
-                inputs[bi, token_pos, :] = mean_act[0, token_pos, :]
+                inputs[bi, token_pos, :] = mean_act[token_pos, :]
+            elif token_pos == seq_len:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[0][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
+            elif token_pos == seq_len - 2:
+                for head_idx in range(model.config.num_attention_heads):
+                    if head_idx not in circuit_components[2][layer]:
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
             elif token_pos == prev_query_box_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[-1][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
-            elif token_pos == prev_query_box_pos + 1:
-                for head_idx in range(model.config.num_attention_heads):
-                    if head_idx not in circuit_components[-2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
-            elif token_pos == last_pos:
-                for head_idx in range(model.config.num_attention_heads):
-                    if head_idx not in circuit_components[0][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
-            elif token_pos == last_pos - 2:
-                for head_idx in range(model.config.num_attention_heads):
-                    if head_idx not in circuit_components[2][layer]:
-                        inputs[bi, token_pos, head_idx] = mean_act[0, token_pos, head_idx]
+                        inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
 
     inputs = rearrange(
         inputs,
