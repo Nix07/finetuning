@@ -259,6 +259,17 @@ def get_data_for_mean_ablation(
     data_file,
     num_boxes,
 ):
+    """
+    This function returns the data for the mean ablation experiment, 
+    which consists of examples with different set of objects, box 
+    labels and randomly selected query box label.
+
+    Args:
+        tokenizer (transformers.tokenizer): Tokenizer object
+        num_samples (int): Number of samples to generate
+        data_file (str): Path to the data file
+        num_boxes (int): Number of boxes in the scene 
+    """
 
     with open(data_file, encoding="utf-8") as file_handle:
         data = [json.loads(line) for line in file_handle]

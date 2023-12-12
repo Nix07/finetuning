@@ -17,35 +17,35 @@ from counterfactual_datasets.entity_tracking import *
 from peft import PeftModel
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.manual_seed(42)
+torch.manual_seed(20)
 
 # %%
 print("Loading model...")
-# path = "/home/local_nikhil/Projects/llama_weights/7B"
+path = "/home/local_nikhil/Projects/llama_weights/7B"
 # tokenizer = AutoTokenizer.from_pretrained(path)
-# model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
+model = AutoModelForCausalLM.from_pretrained(path).to(DEVICE)
 
-base_model = "decapoda-research/llama-7b-hf"
-lora_weights = "tiedong/goat-lora-7b"
+# base_model = "decapoda-research/llama-7b-hf"
+# lora_weights = "tiedong/goat-lora-7b"
 
 tokenizer = LlamaTokenizer.from_pretrained(
     "hf-internal-testing/llama-tokenizer", padding_side="right"
 )
-model = LlamaForCausalLM.from_pretrained(
-    base_model,
-    load_in_8bit=False,
-    torch_dtype=torch.float32,
-    device_map="auto",
-)
-model = PeftModel.from_pretrained(
-    model,
-    lora_weights,
-    torch_dtype=torch.float32,
-    device_map={"": 0},
-)
+# model = LlamaForCausalLM.from_pretrained(
+#     base_model,
+#     load_in_8bit=False,
+#     torch_dtype=torch.float32,
+#     device_map="auto",
+# )
+# model = PeftModel.from_pretrained(
+#     model,
+#     lora_weights,
+#     torch_dtype=torch.float32,
+#     device_map={"": 0},
+# )
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
-circuit_path = "./minimality/new_circuit_heads.json"
+circuit_path = "new_circuit_heads.json"
 
 model.eval()
 for param in model.parameters():
@@ -272,7 +272,7 @@ for desideratum_name, desideratum_method in desiderata.items():
         rel_pos = relative_pos[head_group_name]
         log_steps = 2
         eval_steps = 4
-        save_path = f"./new_masks/goat-7b_new/{head_group_name}/{desideratum_name}/"
+        save_path = f"./new_masks/llama-7b_new/{head_group_name}/{desideratum_name}/"
 
         # check if the path exists
         if not os.path.exists(save_path):
