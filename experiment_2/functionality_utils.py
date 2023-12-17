@@ -5,13 +5,14 @@ import torch
 
 from transformers import LlamaTokenizer, LlamaForCausalLM
 from baukit import TraceDict
-from einops import einsum
+from einops import einsum, rearrange
 from tqdm import tqdm
 from functools import partial
 from collections import defaultdict
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from peft import PeftModel
+from typing import Callable
 
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
@@ -320,7 +321,7 @@ def edit_output(
 
 
 def get_data(
-    desid_method: function = None,
+    desid_method: Callable = None,
     tokenizer: LlamaTokenizer = None,
     data_file: str = None,
     object_file: str = None,
@@ -426,6 +427,15 @@ def get_circuit_components(model, circuit_path):
 def compute_heads_from_mask(
     model: LlamaForCausalLM, mask_dict: dict, rounded: torch.Tensor
 ):
+    """
+    Computes the heads from the mask.
+
+    Args:
+        model (LlamaForCausalLM): Model to use.
+        mask_dict (dict): Dictionary containing the mask.
+        rounded (torch.Tensor): Rounded mask.
+    """
+
     masked_heads = []
     inverse_mask_dict = {v: k for k, v in mask_dict.items()}
 
@@ -440,3 +450,109 @@ def compute_heads_from_mask(
         masked_heads.append([layer_idx, head_idx])
 
     return masked_heads
+
+
+def load_data_for_act_patching(raw_data: list, batch_size: int):
+    """
+    Loads the data into dataloaders.
+
+    Args:
+        raw_data (tuple): Tuple containing the raw data.
+        batch_size (int): Batch size for the dataloaders.
+    """
+
+    dataset = Dataset.from_dict(
+        {
+            "base_input_ids": raw_data[0],
+            "base_input_last_pos": raw_data[1],
+            "source_input_ids": raw_data[2],
+            "source_input_last_pos": raw_data[3],
+            "labels": raw_data[4],
+        }
+    ).with_format("torch")
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    return dataloader
+
+
+def activation_patching(
+    inputs: tuple = None,
+    output: torch.Tensor = None,
+    layer: str = None,
+    model: LlamaForCausalLM = None,
+    source_cache: dict = None,
+    patching_heads: dict = None,
+    bi: int = None,
+    input_tokens: dict = None,
+):
+    """
+    Patches the activations from corrupt example to the original run.
+
+    Args:
+        inputs (tuple): Tuple containing the inputs.
+        output (torch.Tensor): Output of the model.
+        layer (str): Layer to patch.
+        model (LlamaForCausalLM): Model to use.
+        source_cache (dict): Dictionary containing the corrupt activations.
+        patching_heads (dict): Dictionary containing the heads to patch.
+        bi (int): Batch index.
+        input_tokens (dict): Dictionary containing the input tokens.
+    """
+
+    if isinstance(inputs, tuple):
+        inputs = inputs[0]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    cache = rearrange(
+        source_cache[bi][layer],
+        "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    for rel_pos in patching_heads.keys():
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer_index = int(layer.split(".")[2])
+        else:
+            layer_index = int(layer.split(".")[4])
+        curr_layer_heads = [h for l, h in patching_heads[rel_pos] if l == layer_index]
+
+        if rel_pos == -1:
+            for batch in range(inputs.size(0)):
+                prev_query_box_pos = compute_prev_query_box_pos(
+                    input_tokens["base_input_ids"][batch],
+                    input_tokens["base_input_last_pos"][batch],
+                )
+                for head in curr_layer_heads:
+                    inputs[batch, prev_query_box_pos, head] = cache[
+                        batch, prev_query_box_pos, head
+                    ]
+        else:
+            pos = inputs.size(1) - rel_pos - 1
+            for head in curr_layer_heads:
+                inputs[:, pos, head] = cache[:, pos, head]
+
+    inputs = rearrange(
+        inputs,
+        "batch seq_len n_heads d_head -> batch seq_len (n_heads d_head)",
+        n_heads=model.config.num_attention_heads,
+    )
+
+    w_o = model.state_dict()[f"{layer}.weight"]
+    output = einsum(
+        inputs,
+        w_o,
+        "batch seq_len hidden_size, d_model hidden_size -> batch seq_len d_model",
+    )
+
+    del w_o
+    torch.cuda.empty_cache()
+    return output

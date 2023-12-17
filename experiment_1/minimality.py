@@ -41,7 +41,7 @@ def set_seed(seed):
 
 def minimality_main(
     datafile: str = "./data/dataset.jsonl",
-    circuit_root_path: str = None,
+    circuit_root_path: str = "./experiment_1/results/path_patching/llama_circuit",
     num_boxes: int = 7,
     model_name: str = "llama",
     num_samples: int = 100,

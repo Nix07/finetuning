@@ -77,8 +77,8 @@ def get_model_and_tokenizer(model_name: str):
     tokenizer.padding_side = "right"
 
     if model_name == "llama":
-        # path = "/data/nikhil_prakash/llama_weights/7B/"
-        path = "/home/local_nikhil/Projects/llama_weights/7B/"
+        path = "/data/nikhil_prakash/llama_weights/7B/"
+        # path = "/home/local_nikhil/Projects/llama_weights/7B/"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
     elif model_name == "goat":

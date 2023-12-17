@@ -31,10 +31,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(20)
 
 relative_pos = {
-    "direct_logit_heads": 0,
-    "heads_affect_direct_logit": 0,
-    "heads_at_query_box_pos": 2,
-    "heads_at_prev_query_box_pos": -1,
+    "struct_reader": 0,
+    "pos_transmitter": 0,
+    "pos_detector": 2,
+    "value_fetcher": -1,
 }
 
 desiderata = {
@@ -46,14 +46,14 @@ desiderata = {
 
 def dcm_main(
     model_name: str = "llama",
-    circuit_path: str = "../experiment_1/results/circuits/llama_circuit.json",
+    circuit_path: str = "./experiment_1/results/circuits/llama_circuit.json",
     batch_size: int = 32,
-    data_file: str = "../data/dataset.jsonl",
-    object_file: str = "../data/objects.jsonl",
+    data_file: str = "./data/dataset.jsonl",
+    object_file: str = "./data/objects.jsonl",
     epochs: int = 2,
     log_steps: int = 2,
     eval_steps: int = 4,
-    output_dir: str = "./results/DCM/",
+    output_dir: str = "./experiment_2/results/DCM/",
     lambs: list = [0.01],
 ):
     """
@@ -70,7 +70,7 @@ def dcm_main(
         param.requires_grad_(False)
 
     for desid_name, desid_method in desiderata.items():
-        desid_train, desid_eval, desid_test = get_data(
+        desideratum_train, desideratum_eval, desideratum_test = get_data(
             desid_method, tokenizer, data_file, object_file, batch_size
         )
 
@@ -87,9 +87,15 @@ def dcm_main(
                 for layer in range(model.config.num_hidden_layers)
             ]
 
-        from_activations_train = load_activations(model, modules, desid_train, device)
-        from_activations_eval = load_activations(model, modules, desid_eval, device)
-        from_activations_test = load_activations(model, modules, desid_test, device)
+        from_activations_train = load_activations(
+            model, modules, desideratum_train, device
+        )
+        from_activations_eval = load_activations(
+            model, modules, desideratum_eval, device
+        )
+        from_activations_test = load_activations(
+            model, modules, desideratum_test, device
+        )
 
         for head_group_name, head_group in tqdm(head_groups.items()):
             print(f"{desid_name}, {head_group_name} training started...")
@@ -122,7 +128,7 @@ def dcm_main(
                 eval_heads = -np.inf
 
                 for epoch in range(epochs):
-                    for di, desid_train in enumerate(desid_train):
+                    for di, desid_train in enumerate(desideratum_train):
                         for bi, inputs in enumerate(desid_train):
                             mask[lamb].data.clamp_(0, 1)
                             optimizer.zero_grad()
@@ -179,7 +185,9 @@ def dcm_main(
                                     print(heads)
 
                                     correct, total = 0, 0
-                                    for eval_di, desid_eval in enumerate(desid_eval):
+                                    for eval_di, desid_eval in enumerate(
+                                        desideratum_eval
+                                    ):
                                         for eval_bi, eval_inputs in enumerate(
                                             desid_eval
                                         ):
@@ -188,6 +196,7 @@ def dcm_main(
                                                 modules,
                                                 edit_output=partial(
                                                     edit_output,
+                                                    model=model,
                                                     mask=rounded,
                                                     from_activations=from_activations_eval[
                                                         eval_di
@@ -202,6 +211,8 @@ def dcm_main(
                                                     ],
                                                     rel_pos=rel_pos,
                                                     input_tokens=inputs,
+                                                    device=device,
+                                                    mask_dict=mask_dict,
                                                 ),
                                             ) as _:
                                                 eval_output = model(
@@ -262,19 +273,22 @@ def dcm_main(
                     print(heads)
 
                     correct, total = 0, 0
-                    for di, desid_test in enumerate(desid_test):
+                    for di, desid_test in enumerate(desideratum_test):
                         for bi, inputs in enumerate(desid_test):
                             with TraceDict(
                                 model,
                                 modules,
                                 edit_output=partial(
                                     edit_output,
+                                    model=model,
                                     mask=rounded,
                                     from_activations=from_activations_test[di][bi],
                                     to_last_token_pos=inputs["base_input_last_pos"],
                                     from_last_token_pos=inputs["source_input_last_pos"],
                                     rel_pos=rel_pos,
                                     input_tokens=inputs,
+                                    device=device,
+                                    mask_dict=mask_dict,
                                 ),
                             ) as _:
                                 output = model(inputs["base_input_ids"].to(device))
