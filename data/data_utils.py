@@ -255,15 +255,15 @@ def get_data_for_mean_ablation(
     num_boxes,
 ):
     """
-    This function returns the data for the mean ablation experiment, 
-    which consists of examples with different set of objects, box 
+    This function returns the data for the mean ablation experiment,
+    which consists of examples with different set of objects, box
     labels and randomly selected query box label.
 
     Args:
         tokenizer (transformers.tokenizer): Tokenizer object
         num_samples (int): Number of samples to generate
         data_file (str): Path to the data file
-        num_boxes (int): Number of boxes in the scene 
+        num_boxes (int): Number of boxes in the scene
     """
 
     with open(data_file, encoding="utf-8") as file_handle:
@@ -272,7 +272,7 @@ def get_data_for_mean_ablation(
     assert num_samples <= len(data)
     prompts = []
 
-    # Each prompt will have different set of objects and box labels, 
+    # Each prompt will have different set of objects and box labels,
     # with random query box label
     for i in range(0, num_samples, num_boxes):
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
@@ -1963,9 +1963,7 @@ def get_samples_with_correct_prediction(
     return input_ids, last_token_indices, output_ids
 
 
-def entity_tracking_example_sampler(
-    tokenizer, num_samples, data_file, architecture
-):
+def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture):
     with open(data_file) as f:
         data = [json.loads(line) for line in f]
 
@@ -2140,16 +2138,12 @@ def box_index_aligner_examples(
     data_file,
     num_ents_or_ops,
     architecture,
-    few_shot,
-    alt_examples,
 ):
     (
         input_ids,
         last_token_indices,
         output_ids,
-    ) = entity_tracking_example_sampler(
-        tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
-    )
+    ) = entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture)
 
     all_base_input_ids = []
     all_base_input_last_pos = []

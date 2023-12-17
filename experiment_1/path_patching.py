@@ -1,15 +1,25 @@
-import torch
-import transformers
+import random
 import fire
+import numpy as np
 from functools import partial
 from baukit import TraceDict
 from tqdm import tqdm
+
+import torch
+import transformers
+from transformers import (
+    LlamaForCausalLM,
+    LlamaTokenizer,
+)
+from torch.utils.data import DataLoader
 
 from pp_utils import (
     get_model_and_tokenizer,
     load_dataloader,
     get_caches,
     compute_topk_components,
+    patching_receiver_heads,
+    patching_sender_heads,
     get_receiver_layers,
 )
 
@@ -31,7 +41,7 @@ def set_seed(seed: int):
 
 
 def apply_pp(
-    model: AutoModelForCausalLM = None,
+    model: LlamaForCausalLM = None,
     clean_cache: dict = None,
     corrupt_cache: dict = None,
     dataloader: DataLoader = None,
@@ -133,7 +143,7 @@ def apply_pp(
 
 
 def pp_main(
-    datafile: str = "../data/dataset.jsonl",
+    datafile: str = "./data/dataset.jsonl",
     num_boxes: int = 7,
     model_name: str = "llama",
     num_samples: int = 500,
@@ -141,7 +151,7 @@ def pp_main(
     n_pos_trans: int = 5,
     n_pos_detect: int = 10,
     n_struct_read: int = 5,
-    output_path: str = "./results/path_patching/",
+    output_path: str = "./experiment_1/results/path_patching/",
     seed: int = 20,
     batch_size: int = 100,
 ):
@@ -212,7 +222,7 @@ def pp_main(
         hook_points=hook_points,
         rel_pos=0,
     )
-    torch.save(patching_scores, output_path + "direct_logit_heads.pt")
+    torch.save(patching_scores, output_path + "value_fetcher_heads.pt")
     value_fetcher_heads = compute_topk_components(
         patching_scores=patching_scores, k=n_value_fetcher, largest=False
     )
@@ -234,51 +244,51 @@ def pp_main(
         hook_points=hook_points,
         rel_pos=0,
     )
-    torch.save(patching_scores, output_path + "heads_affect_direct_logit.pt")
-    heads_affect_direct_logit = compute_topk_components(
+    torch.save(patching_scores, output_path + "pos_transmitter.pt")
+    pos_transmitter = compute_topk_components(
         patching_scores=patching_scores, k=n_pos_trans, largest=False
     )
-    print(f"POSITION TRANSMITTER HEADS: {heads_affect_direct_logit}\n")
+    print(f"POSITION TRANSMITTER HEADS: {pos_transmitter}\n")
 
     # Compute Position Detector Heads
     print("COMPUTING POSITION DETECTOR HEADS...")
     receiver_layers = get_receiver_layers(
-        model=model, receiver_heads=heads_affect_direct_logit, composition="v"
+        model=model, receiver_heads=pos_transmitter, composition="v"
     )
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,
         corrupt_cache=corrupt_cache,
         dataloader=dataloader,
-        receiver_heads=heads_affect_direct_logit,
+        receiver_heads=pos_transmitter,
         receiver_layers=receiver_layers,
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=2,
     )
-    torch.save(patching_scores, output_path + "heads_at_query_box_pos.pt")
-    head_at_query_box_token = compute_topk_components(
+    torch.save(patching_scores, output_path + "pos_detector.pt")
+    pos_detector = compute_topk_components(
         patching_scores=patching_scores, k=n_pos_detect, largest=False
     )
-    print(f"POSITION DETECTOR HEADS: {head_at_query_box_token}\n")
+    print(f"POSITION DETECTOR HEADS: {pos_detector}\n")
 
     # Compute Structural Reader Heads
     print("COMPUTING STRUCTURAL READER HEADS...")
     receiver_layers = get_receiver_layers(
-        model=model, receiver_heads=head_at_query_box_token, composition="v"
+        model=model, receiver_heads=pos_detector, composition="v"
     )
     patching_scores = apply_pp(
         model=model,
         clean_cache=clean_cache,
         corrupt_cache=corrupt_cache,
         dataloader=dataloader,
-        receiver_heads=head_at_query_box_token,
+        receiver_heads=pos_detector,
         receiver_layers=receiver_layers,
         clean_logit_outputs=clean_logit_outputs,
         hook_points=hook_points,
         rel_pos=-1,
     )
-    torch.save(patching_scores, output_path + "heads_at_prev_query_box_pos.pt")
+    torch.save(patching_scores, output_path + "struct_reader.pt")
     heads_at_prev_box_pos = compute_topk_components(
         patching_scores=patching_scores, k=n_struct_read, largest=False
     )

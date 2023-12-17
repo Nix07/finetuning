@@ -1,3 +1,4 @@
+import os
 import random
 import math
 import sys
@@ -16,7 +17,9 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-sys.path.append("../")
+curr_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
+sys.path.append(parent_dir)
 from data.data_utils import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,7 +77,8 @@ def get_model_and_tokenizer(model_name: str):
     tokenizer.padding_side = "right"
 
     if model_name == "llama":
-        path = "/data/nikhil_prakash/llama_weights/7B/"
+        # path = "/data/nikhil_prakash/llama_weights/7B/"
+        path = "/home/local_nikhil/Projects/llama_weights/7B/"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
     elif model_name == "goat":
@@ -124,8 +128,6 @@ def load_dataloader(
         num_samples=num_samples,
         data_file=datafile,
         architecture="LLaMAForCausalLM",
-        few_shot=False,
-        alt_examples=True,
         num_ents_or_ops=num_boxes,
     )
     base_tokens = raw_data[0]  # Clean inputs
@@ -519,7 +521,7 @@ def loal_eval_data(
     return data_loader
 
 
-def load_ablate_data(
+def load_ablation_data(
     tokenizer: LlamaTokenizer,
     datafile: str,
     num_samples: int,
@@ -565,7 +567,7 @@ def get_mean_activations(
     batch_size: int,
 ):
     """
-    Computes the mean activations of the model.
+    Computes the mean activations of every attention head at all positions.
 
     Args:
         model: model under investigation.
@@ -576,7 +578,7 @@ def get_mean_activations(
     """
 
     print("Computing mean activations...")
-    ablate_dataloader = load_ablate_data(
+    ablation_dataloader = load_ablation_data(
         tokenizer=tokenizer,
         datafile=datafile,
         num_samples=num_samples,
@@ -596,7 +598,7 @@ def get_mean_activations(
 
     mean_activations = {}
     with torch.no_grad():
-        for _, inp in enumerate(tqdm(ablate_dataloader)):
+        for _, inp in enumerate(tqdm(ablation_dataloader)):
             for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
                     inp[k] = v.to(model.device)
@@ -607,15 +609,15 @@ def get_mean_activations(
             for layer in modules:
                 if "o_proj" in layer:
                     if layer in mean_activations:
-                        mean_activations[layer] += torch.mean(cache[layer].input, dim=0)
+                        mean_activations[layer] += torch.sum(cache[layer].input, dim=0)
                     else:
-                        mean_activations[layer] = torch.mean(cache[layer].input, dim=0)
+                        mean_activations[layer] = torch.sum(cache[layer].input, dim=0)
 
             del cache
             torch.cuda.empty_cache()
 
         for layer in modules:
-            mean_activations[layer] /= len(ablate_dataloader)
+            mean_activations[layer] /= len(ablation_dataloader.dataset)
 
     return mean_activations, modules
 
@@ -701,7 +703,7 @@ def mean_ablate(
     return output
 
 
-def evaluate_performance(
+def eval_circuit_performance(
     model: LlamaForCausalLM,
     dataloader: torch.utils.data.DataLoader,
     modules: list,
@@ -709,7 +711,7 @@ def evaluate_performance(
     mean_activations: dict,
 ):
     """
-    Evaluates the performance of the model.
+    Evaluates the performance of the model/circuit.
 
     Args:
         model: model under investigation.
@@ -752,7 +754,6 @@ def evaluate_performance(
             torch.cuda.empty_cache()
 
     current_acc = round(correct_count / total_count, 2)
-    # print(f"Task accuracy: {current_acc}")
     return current_acc
 
 
@@ -781,56 +782,56 @@ def get_circuit(
     circuit_components[2] = defaultdict(list)
     circuit_components[-1] = defaultdict(list)
 
-    path = circuit_root_path + "/direct_logit_heads.pt"
-    direct_logit_heads = compute_topk_components(
+    path = circuit_root_path + "/value_fetcher_heads.pt"
+    value_fetcher_heads = compute_topk_components(
         torch.load(path), k=n_value_fetcher, largest=False
     )
 
-    path = circuit_root_path + "/heads_affect_direct_logit.pt"
-    heads_affecting_direct_logit_heads = compute_topk_components(
+    path = circuit_root_path + "/pos_transmitter.pt"
+    pos_transmitter_heads = compute_topk_components(
         torch.load(path), k=n_pos_trans, largest=False
     )
 
-    path = circuit_root_path + "/heads_at_query_box_pos.pt"
-    head_at_query_box_token = compute_topk_components(
+    path = circuit_root_path + "/pos_detector.pt"
+    pos_detector_heads = compute_topk_components(
         torch.load(path), k=n_pos_detect, largest=False
     )
 
-    path = circuit_root_path + "/heads_at_prev_query_box_pos.pt"
-    heads_at_prev_box_pos = compute_topk_components(
+    path = circuit_root_path + "/struct_reader.pt"
+    struct_reader_heads = compute_topk_components(
         torch.load(path), k=n_struct_read, largest=False
     )
 
     intersection = []
-    for head in direct_logit_heads:
-        if head in heads_affecting_direct_logit_heads:
+    for head in value_fetcher_heads:
+        if head in pos_transmitter_heads:
             intersection.append(head)
 
     for head in intersection:
-        direct_logit_heads.remove(head)
+        value_fetcher_heads.remove(head)
 
-    for layer_idx, head in direct_logit_heads:
+    for layer_idx, head in value_fetcher_heads:
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer = f"model.layers.{layer_idx}.self_attn.o_proj"
         else:
             layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
         circuit_components[0][layer].append(head)
 
-    for layer_idx, head in heads_affecting_direct_logit_heads:
+    for layer_idx, head in pos_transmitter_heads:
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer = f"model.layers.{layer_idx}.self_attn.o_proj"
         else:
             layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
         circuit_components[0][layer].append(head)
 
-    for layer_idx, head in head_at_query_box_token:
+    for layer_idx, head in pos_detector_heads:
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer = f"model.layers.{layer_idx}.self_attn.o_proj"
         else:
             layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
         circuit_components[2][layer].append(head)
 
-    for layer_idx, head in heads_at_prev_box_pos:
+    for layer_idx, head in struct_reader_heads:
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer = f"model.layers.{layer_idx}.self_attn.o_proj"
         else:
@@ -839,10 +840,10 @@ def get_circuit(
 
     return (
         circuit_components,
-        direct_logit_heads,
-        heads_affecting_direct_logit_heads,
-        head_at_query_box_token,
-        heads_at_prev_box_pos,
+        value_fetcher_heads,
+        pos_transmitter_heads,
+        pos_detector_heads,
+        struct_reader_heads,
     )
 
 
@@ -891,7 +892,7 @@ def compute_pair_drop_values(
             if layer_1 is not layer_2 and head_1 is not head_2:
                 circuit_components[rel_pos][layer_2].remove(head_2)
 
-            greedy_res[(layer_1, head_1)][(layer_2, head_2)] = evaluate_performance(
+            greedy_res[(layer_1, head_1)][(layer_2, head_2)] = eval_circuit_performance(
                 model, dataloader, modules, circuit_components, mean_activations
             )
             if layer_1 is not layer_2 and head_1 is not head_2:
@@ -952,14 +953,14 @@ def get_head_significance_score(
                 break
             circuit_components[rel_pos][top_layer].remove(top_head)
 
-        befor = evaluate_performance(
+        before = eval_circuit_performance(
             model, dataloader, modules, circuit_components, mean_activations
         )
         circuit_components[rel_pos][layer].remove(head)
-        after = evaluate_performance(
+        after = eval_circuit_performance(
             model, dataloader, modules, circuit_components, mean_activations
         )
-        res[(layer, head)] = (befor, after)
+        res[(layer, head)] = (before, after)
 
         for r in ranked[str((layer, head))][
             : math.ceil(percentage * len(ranked.values()))

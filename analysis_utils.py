@@ -7,7 +7,7 @@ from functools import partial
 from collections import defaultdict
 from datasets import Dataset
 from torch.utils.data import DataLoader
-from counterfactual_datasets.entity_tracking import *
+from data.data_utils import *
 
 seed = 10
 random.seed(seed)
