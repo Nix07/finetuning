@@ -782,7 +782,7 @@ def get_circuit(
     circuit_components[2] = defaultdict(list)
     circuit_components[-1] = defaultdict(list)
 
-    path = circuit_root_path + "/value_fetcher_heads.pt"
+    path = circuit_root_path + "/value_fetcher.pt"
     value_fetcher_heads = compute_topk_components(
         torch.load(path), k=n_value_fetcher, largest=False
     )

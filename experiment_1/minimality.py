@@ -52,8 +52,8 @@ def minimality_main(
     n_struct_read: int = 5,
     percentage: float = 0.3,
     minimality_threshold: float = 0.01,
-    seed: int = 20,
-    results_path: str = "./experiment_1/results/minimality",
+    seed: int = 10,
+    results_path: str = "./experiment_1/results/minimality/llama_circuit",
 ):
     """
     Computes the minimality scores for the heads in the model
@@ -178,13 +178,17 @@ def minimality_main(
 
         print(f"{idx_to_group[idx]} Heads Completed...")
 
-        # Removing heads with low significance score
+        # Selecting heads with minimality score greater than threshold
         for k in new_res:
             if new_res[k][0] / new_res[k][1] - 1 >= minimality_threshold:
                 head = [int(k.split(".")[2]), int(k.split(",")[1][1:-1])]
                 minimal_circuit[idx_to_group[idx]].append(head)
 
-    with open("./experimemt_1/circuit_heads.json", "w", encoding="utf-8") as f:
+    with open(
+        f"./experiment_1/results/circuits/{model_name}_circuit.json",
+        "w",
+        encoding="utf-8",
+    ) as f:
         json.dump(minimal_circuit, f)
 
     print("Minimal Circuit Computed...")
