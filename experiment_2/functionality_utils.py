@@ -382,10 +382,10 @@ def get_circuit_components(model, circuit_path):
         "struct_reader": struct_reader,
     }
 
-    print(f"Direct logit heads: {len(value_fetcher)}")
-    print(f"Heads affecting direct logit heads: {len(pos_transmitter)}")
-    print(f"Heads at query box token: {len(pos_detector)}")
-    print(f"Heads at prev query box token: {len(struct_reader)}")
+    print(f"Value Fetcher heads: {len(value_fetcher)}")
+    print(f"Position Transmitter heads: {len(pos_transmitter)}")
+    print(f"Position Detector Heads: {len(pos_detector)}")
+    print(f"Structure Reader Heads: {len(struct_reader)}")
 
     for layer_idx, head in value_fetcher:
         if model.config.architectures[0] == "LlamaForCausalLM":

@@ -1,4 +1,5 @@
 import os
+import random
 import json
 import sys
 import fire
@@ -25,13 +26,14 @@ from data.data_utils import (
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+random.seed(20)
 torch.manual_seed(20)
 
 relative_pos = {
-    "struct_reader": 0,
+    "struct_reader": -1,
     "pos_transmitter": 0,
     "pos_detector": 2,
-    "value_fetcher": -1,
+    "value_fetcher": 0,
 }
 
 desiderata_methods = {
@@ -45,12 +47,24 @@ results = defaultdict(str)
 
 def act_patching_main(
     model_name: str = "llama",
+    circuit_name: str = "llama",
     data_file: str = "./data/dataset.jsonl",
     object_file: str = "./data/objects.jsonl",
-    num_samples: int = 1000,
+    num_samples: int = 500,
     batch_size: int = 32,
     output_dir: str = "./experiment_2/results/activation_patching",
 ):
+    """
+    Main function for activation patching experiments.
+
+    Args:
+        model_name (str): Name of the model to be used.
+        data_file (str): Path to the dataset file.
+        object_file (str): Path to the object file.
+        num_samples (int): Number of samples to be generated.
+        batch_size (int): Batch size for the dataloader.
+        output_dir (str): Path to the output directory.
+    """
     results[model_name] = defaultdict(dict)
     model, tokenizer = get_model_and_tokenizer(model_name)
     print("Model and Tokenizer loaded")
@@ -58,7 +72,7 @@ def act_patching_main(
     for head_group, rel_pos in relative_pos.items():
         for desiderata in ["positional", "object_value", "box_label_value"]:
             with open(
-                f"./experiment_2/results/DCM/{model_name}/{head_group}/{desiderata}/0.01.txt",
+                f"./experiment_2/results/DCM/{circuit_name}/{head_group}/{desiderata}/0.01.txt",
                 "r",
                 encoding="utf-8",
             ) as f:

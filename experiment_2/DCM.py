@@ -31,10 +31,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(20)
 
 relative_pos = {
-    "struct_reader": 0,
+    "struct_reader": -1,
     "pos_transmitter": 0,
     "pos_detector": 2,
-    "value_fetcher": -1,
+    "value_fetcher": 0,
 }
 
 desiderata = {
@@ -68,6 +68,7 @@ def dcm_main(
     model.eval()
     for param in model.parameters():
         param.requires_grad_(False)
+    print("Model and Tokenizer loaded...\n")
 
     for desid_name, desid_method in desiderata.items():
         desideratum_train, desideratum_eval, desideratum_test = get_data(
@@ -87,6 +88,7 @@ def dcm_main(
                 for layer in range(model.config.num_hidden_layers)
             ]
 
+        print("Computing counterfactual example activations...")
         from_activations_train = load_activations(
             model, modules, desideratum_train, device
         )
@@ -96,6 +98,7 @@ def dcm_main(
         from_activations_test = load_activations(
             model, modules, desideratum_test, device
         )
+        print("Counterfactual example activations computed...\n")
 
         for head_group_name, head_group in tqdm(head_groups.items()):
             print(f"{desid_name}, {head_group_name} training started...")
