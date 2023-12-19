@@ -222,7 +222,7 @@ def pp_main(
         hook_points=hook_points,
         rel_pos=0,
     )
-    torch.save(patching_scores, output_path + "value_fetcher_heads.pt")
+    torch.save(patching_scores, output_path + "value_fetcher.pt")
     value_fetcher_heads = compute_topk_components(
         patching_scores=patching_scores, k=n_value_fetcher, largest=False
     )
