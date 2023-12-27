@@ -46,13 +46,13 @@ def minimality_main(
     model_name: str = "llama",
     num_samples: int = 100,
     batch_size: int = 100,
-    n_value_fetcher: int = 58,
-    n_pos_trans: int = 10,
-    n_pos_detect: int = 25,
-    n_struct_read: int = 5,
+    n_value_fetcher: int = 101,  # Goat circuit: 101, Llama circuit: 58
+    n_pos_trans: int = 30,  # Goat circuit: 30, Llama circuit: 10
+    n_pos_detect: int = 50,  # Goat circuit: 50, Llama circuit: 25
+    n_struct_read: int = 40,  # Goat circuit: 40, Llama circuit: 5
     percentage: float = 0.3,
     minimality_threshold: float = 0.01,
-    seed: int = 10,
+    seed: int = 10,  # Goat circuit: 56, Llama circuit: 10
     results_path: str = "./experiment_1/results/minimality/llama_circuit",
 ):
     """
@@ -181,11 +181,14 @@ def minimality_main(
         # Selecting heads with minimality score greater than threshold
         for k in new_res:
             if new_res[k][0] / new_res[k][1] - 1 >= minimality_threshold:
-                head = [int(k.split(".")[2]), int(k.split(",")[1][1:-1])]
+                if model.config.architectures[0] == "LlamaForCausalLM":
+                    head = [int(k.split(".")[2]), int(k.split(",")[1][1:-1])]
+                else:
+                    head = [int(k.split(".")[4]), int(k.split(",")[1][1:-1])]
                 minimal_circuit[idx_to_group[idx]].append(head)
 
     with open(
-        f"./experiment_1/results/circuits/{model_name}_circuit.json",
+        f"{results_path}/{model_name}_circuit.json",
         "w",
         encoding="utf-8",
     ) as f:
