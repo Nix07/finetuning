@@ -723,7 +723,7 @@ def eval_circuit_performance(
 
     correct_count, total_count = 0, 0
     with torch.no_grad():
-        for _, inp in enumerate((dataloader)):
+        for _, inp in enumerate(tqdm(dataloader)):
             for k, v in inp.items():
                 if v is not None and isinstance(v, torch.Tensor):
                     inp[k] = v.to(model.device)
