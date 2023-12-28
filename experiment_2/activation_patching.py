@@ -72,7 +72,7 @@ def act_patching_main(
     for head_group, rel_pos in relative_pos.items():
         for desiderata in ["positional", "object_value", "box_label_value"]:
             with open(
-                f"./experiment_2/results/DCM/{circuit_name}/{head_group}/{desiderata}/0.01.txt",
+                f"./experiment_2/results/DCM/{circuit_name}_circuit/{head_group}/{desiderata}/0.01.txt",
                 "r",
                 encoding="utf-8",
             ) as f:
