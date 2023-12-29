@@ -338,8 +338,9 @@ def cmap_out(
                         ]
 
             else:
+                pos = input_tokens["input_ids"].size(1) - rel_pos - 1
                 for head in curr_layer_heads:
-                    inputs[:, -1, head] = g_cache[:, -1, head]
+                    inputs[:, pos, head] = g_cache[:, pos, head]
 
         inputs = rearrange(
             inputs,

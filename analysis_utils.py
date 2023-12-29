@@ -18,7 +18,9 @@ torch.manual_seed(seed)
 def apply_causal_mask(attn_scores):
     ignore = torch.tensor(torch.finfo(attn_scores.dtype).min)
     mask = torch.triu(
-        torch.ones(attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device),
+        torch.ones(
+            attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device
+        ),
         diagonal=1,
     ).bool()
     attn_scores.masked_fill_(mask, ignore)
@@ -56,7 +58,9 @@ def zero_ablation(inputs, output, layer, model, ablation_heads, last_token_pos):
             n_heads=model.config.num_attention_heads,
         )
 
-        ablation_heads_curr_layer = [h for l_idx, h in ablation_heads if l_idx == layer_idx]
+        ablation_heads_curr_layer = [
+            h for l_idx, h in ablation_heads if l_idx == layer_idx
+        ]
 
         for head in ablation_heads_curr_layer:
             for bi in range(batch_size):
@@ -123,21 +127,23 @@ def get_attn_scores(model, tokens, layer, ablation_heads=None, last_token_pos=No
     d_head = model.config.hidden_size // n_heads
 
     key = (
-        residual[f"model.layers.{layer}.self_attn.k_proj"]
+        residual[f"base_model.model.model.layers.{layer}.self_attn.k_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
     query = (
-        residual[f"model.layers.{layer}.self_attn.q_proj"]
+        residual[f"base_model.model.model.layers.{layer}.self_attn.q_proj"]
         .output.view(batch_size, seq_len, n_heads, d_head)
         .transpose(1, 2)
     )
-    value = residual[f"model.layers.{layer}.self_attn.v_proj"].output.view(
-        batch_size, seq_len, n_heads, d_head
-    )
+    value = residual[
+        f"base_model.model.model.layers.{layer}.self_attn.v_proj"
+    ].output.view(batch_size, seq_len, n_heads, d_head)
 
     kv_seq_len = key.shape[-2]
-    cos, sin = model.model.layers[layer].self_attn.rotary_emb(value, seq_len=kv_seq_len)
+    cos, sin = model.base_model.model.model.layers[layer].self_attn.rotary_emb(
+        value, seq_len=kv_seq_len
+    )
     positions = [i for i in range(seq_len)]
     positions = torch.tensor(positions).unsqueeze(0).repeat(batch_size, 1).to("cuda")
     query, key = apply_rotary_pos_emb(query, key, cos, sin, positions)
@@ -202,7 +208,9 @@ def comparison_metric(eval_preds, eval_labels, incorrect_objects):
     # incorrect_objects: (#batch, #incorrect_objects)
     total_count = 0
     correct_count = 0
-    for pred, correct_object, incorrect_objs in zip(eval_preds, eval_labels, incorrect_objects):
+    for pred, correct_object, incorrect_objs in zip(
+        eval_preds, eval_labels, incorrect_objects
+    ):
         correctness = True
         for incorrect_object in incorrect_objs:
             if pred[correct_object] >= pred[incorrect_object]:
@@ -253,12 +261,16 @@ def get_circuit_components(model, circuit_path):
         circuit_heads = json.load(f)
 
     direct_logit_heads = circuit_heads["direct_logit_heads"]
-    heads_affecting_direct_logit_heads = circuit_heads["heads_affecting_direct_logit_heads"]
+    heads_affecting_direct_logit_heads = circuit_heads[
+        "heads_affecting_direct_logit_heads"
+    ]
     head_at_query_box_token = circuit_heads["head_at_query_box_token"]
     heads_at_prev_box_pos = circuit_heads["heads_at_prev_box_pos"]
 
     print(f"Direct logit heads: {len(direct_logit_heads)}")
-    print(f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}")
+    print(
+        f"Heads affecting direct logit heads: {len(heads_affecting_direct_logit_heads)}"
+    )
     print(f"Heads at query box token: {len(head_at_query_box_token)}")
     print(f"Heads at prev query box token: {len(heads_at_prev_box_pos)}")
 
@@ -299,7 +311,9 @@ def get_circuit_components(model, circuit_path):
 
     for pos in circuit_components.keys():
         for layer_idx in circuit_components[pos].keys():
-            circuit_components[pos][layer_idx] = list(set(circuit_components[pos][layer_idx]))
+            circuit_components[pos][layer_idx] = list(
+                set(circuit_components[pos][layer_idx])
+            )
 
     return circuit_components, head_groups
 
