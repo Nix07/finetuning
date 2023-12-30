@@ -101,6 +101,10 @@ def get_model_and_tokenizer(model_name: str):
         path = "AlekseyKorshuk/vicuna-7b"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
+    elif model_name == "naive":
+        path = "/data/nikhil_prakash/anima-2.0/naive_ft_model/"
+        model = LlamaForCausalLM.from_pretrained(path).to(device)
+
     return model, tokenizer
 
 
