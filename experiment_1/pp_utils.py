@@ -635,6 +635,7 @@ def mean_ablate(
     circuit_components: dict = None,
     mean_activations: dict = None,
     input_tokens: torch.tensor = None,
+    ablate_non_vital_pos: bool = None,
 ):
     """
     Ablates the model components that are not present in `circuit_components`
@@ -675,6 +676,7 @@ def mean_ablate(
                 token_pos != prev_query_box_pos
                 and token_pos != last_pos - 2
                 and token_pos != last_pos
+                and ablate_non_vital_pos
             ):
                 inputs[bi, token_pos, :] = mean_act[token_pos, :]
 
@@ -714,6 +716,7 @@ def eval_circuit_performance(
     modules: list,
     circuit_components: dict,
     mean_activations: dict,
+    ablate_non_vital_pos: bool = True,
 ):
     """
     Evaluates the performance of the model/circuit.
@@ -743,6 +746,7 @@ def eval_circuit_performance(
                     circuit_components=circuit_components,
                     mean_activations=mean_activations,
                     input_tokens=inp["input_ids"],
+                    ablate_non_vital_pos=ablate_non_vital_pos,
                 ),
             ) as _:
                 outputs = model(inp["input_ids"])
@@ -1049,3 +1053,48 @@ def get_head_significance_score(
         circuit_components[rel_pos][layer].append(head)
 
     return res
+
+
+def get_final_circuit(model, circuit_heads):
+    """
+    Computes the final circuit.
+
+    Args:
+        model: model under investigation.
+        circuit_heads: circuit heads.
+    """
+
+    circuit_components = {}
+    circuit_components[0] = defaultdict(list)
+    circuit_components[2] = defaultdict(list)
+    circuit_components[-1] = defaultdict(list)
+
+    for layer_idx, head in circuit_heads["value_fetcher"]:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in circuit_heads["pos_transmitter"]:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[0][layer].append(head)
+
+    for layer_idx, head in circuit_heads["pos_detector"]:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[2][layer].append(head)
+
+    for layer_idx, head in circuit_heads["struct_reader"]:
+        if model.config.architectures[0] == "LlamaForCausalLM":
+            layer = f"model.layers.{layer_idx}.self_attn.o_proj"
+        else:
+            layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
+        circuit_components[-1][layer].append(head)
+
+    return circuit_components
