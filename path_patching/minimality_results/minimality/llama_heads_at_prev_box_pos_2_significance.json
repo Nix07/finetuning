@@ -1,1 +1,0 @@
-{"('base_model.model.model.layers.8.self_attn.o_proj', 21)": [0.7, 0.56], "('base_model.model.model.layers.12.self_attn.o_proj', 23)": [0.6, 0.57], "('base_model.model.model.layers.11.self_attn.o_proj', 9)": [0.69, 0.68], "('base_model.model.model.layers.11.self_attn.o_proj', 23)": [0.6, 0.58], "('base_model.model.model.layers.7.self_attn.o_proj', 2)": [0.58, 0.56]}
