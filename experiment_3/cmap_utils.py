@@ -17,7 +17,7 @@ from typing import Callable
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
-from data.data_utils import entity_tracking_example_sampler
+from data.data_utils import sample_box_data
 
 
 def get_model_and_tokenizer(model_name: str, device: str = "cuda"):
@@ -98,7 +98,7 @@ def load_data(
         batch_size (int, optional): Batch size. Defaults to 8.
     """
 
-    raw_data = entity_tracking_example_sampler(
+    raw_data = sample_box_data(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=data_file,

@@ -506,7 +506,7 @@ def loal_eval_data(
     """
 
     print(f"Loading dataset...")
-    raw_data = entity_tracking_example_sampler(
+    raw_data = sample_box_data(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,

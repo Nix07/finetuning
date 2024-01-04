@@ -1963,8 +1963,18 @@ def get_samples_with_correct_prediction(
     return input_ids, last_token_indices, output_ids
 
 
-def entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture):
-    with open(data_file) as f:
+def sample_box_data(tokenizer, num_samples, data_file, architecture):
+    """
+    Sample data from the box data file
+
+    Args:
+        tokenizer: Tokenizer to be used
+        num_samples: Number of samples to be generated
+        data_file: Path to the box data file
+        architecture: Model architecture
+    """
+
+    with open(data_file, encoding="utf-8") as f:
         data = [json.loads(line) for line in f]
 
     assert num_samples <= len(data)
@@ -2005,7 +2015,7 @@ def random_label_samples_for_path_patching(
     few_shot,
     alt_examples,
 ):
-    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
+    input_ids, last_token_indices, output_ids = sample_box_data(
         tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
     )
 
@@ -2053,7 +2063,7 @@ def different_format_samples(
         clean_input_ids,
         clean_last_token_indices,
         clean_output_ids,
-    ) = entity_tracking_example_sampler(
+    ) = sample_box_data(
         tokenizer, num_samples, data_file_1, architecture, few_shot, alt_examples
     )
 
@@ -2061,7 +2071,7 @@ def different_format_samples(
         corrupt_input_ids,
         corrupt_last_token_indices,
         corrupt_output_ids,
-    ) = entity_tracking_example_sampler(
+    ) = sample_box_data(
         tokenizer, num_samples, data_file_2, architecture, few_shot, alt_examples
     )
 
@@ -2143,7 +2153,7 @@ def box_index_aligner_examples(
         input_ids,
         last_token_indices,
         output_ids,
-    ) = entity_tracking_example_sampler(tokenizer, num_samples, data_file, architecture)
+    ) = sample_box_data(tokenizer, num_samples, data_file, architecture)
 
     all_base_input_ids = []
     all_base_input_last_pos = []
@@ -2208,7 +2218,7 @@ def modified_box_name_alignment_example_sampler(
         last_token_indices,
         output_ids,
         incorrect_object_ids,
-    ) = entity_tracking_example_sampler(
+    ) = sample_box_data(
         tokenizer, num_samples, data_file, architecture, few_shot, alt_examples
     )
 
@@ -2251,7 +2261,7 @@ def modified_box_name_alignment_example_sampler(
 def box_name_alignment_example_sampler(
     tokenizer, num_samples, data_file, architecture, object_file, num_ents_or_ops
 ):
-    input_ids, last_token_indices, output_ids = entity_tracking_example_sampler(
+    input_ids, last_token_indices, output_ids = sample_box_data(
         tokenizer, num_samples, data_file, architecture
     )
 
