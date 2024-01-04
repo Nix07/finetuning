@@ -21,12 +21,14 @@ from tqdm import tqdm
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
-from data.data_utils import *
+from data.data_utils import load_pp_data, sample_box_data, get_data_for_mean_ablation
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True):
+def compute_topk_components(
+    patching_scores: torch.Tensor, k: int, largest=True, return_values=False
+):
     """
     Computes the topk most influential components (i.e. heads) for patching.
 
@@ -34,9 +36,11 @@ def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True)
         patching_scores: patching scores for the components.
         k: number of components to return.
         largest: whether to return the largest or smallest components.
+        return_values: whether to return the values of the components or not.
     """
 
     top_indices = torch.topk(patching_scores.flatten(), k, largest=largest).indices
+    top_values = torch.topk(patching_scores.flatten(), k, largest=largest).values
 
     # Convert the top_indices to 2D indices
     row_indices = top_indices // patching_scores.shape[1]
@@ -44,7 +48,11 @@ def compute_topk_components(patching_scores: torch.Tensor, k: int, largest=True)
     top_components = torch.stack((row_indices, col_indices), dim=1)
     # Get the top indices as a list of 2D indices (row, column)
     top_components = top_components.tolist()
-    return top_components
+
+    if return_values:
+        return top_components, top_values.tolist()
+    else:
+        return top_components
 
 
 def compute_prev_query_box_pos(input_ids, last_token_index):
@@ -127,7 +135,7 @@ def load_dataloader(
         num_boxes: number of boxes in the datafile.
         batch_size: batch size to use for the dataloader.
     """
-    raw_data = box_index_aligner_examples(
+    raw_data = load_pp_data(
         model=model,
         tokenizer=tokenizer,
         num_samples=num_samples,
@@ -505,7 +513,7 @@ def loal_eval_data(
         batch_size: batch size to use for the dataloader.
     """
 
-    print(f"Loading dataset...")
+    print("Loading dataset...")
     raw_data = sample_box_data(
         tokenizer=tokenizer,
         num_samples=num_samples,

@@ -2141,7 +2141,7 @@ def random_samples(
     return input_ids, last_token_indices, output_ids
 
 
-def box_index_aligner_examples(
+def load_pp_data(
     model,
     tokenizer,
     num_samples,
@@ -2149,6 +2149,10 @@ def box_index_aligner_examples(
     num_ents_or_ops,
     architecture,
 ):
+    """
+    Load data for path patching task consisting of original and counterfactual
+    examples (random label and random object).
+    """
     (
         input_ids,
         last_token_indices,

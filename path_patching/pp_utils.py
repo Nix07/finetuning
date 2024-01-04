@@ -95,7 +95,7 @@ def load_dataloader(
         num_boxes: number of boxes in the datafile.
         batch_size: batch size to use for the dataloader.
     """
-    raw_data = box_index_aligner_examples(
+    raw_data = load_pp_data(
         model=model,
         tokenizer=tokenizer,
         num_samples=num_samples,
@@ -480,7 +480,7 @@ def loal_eval_data(
     """
 
     print(f"Loading dataset...")
-    raw_data = entity_tracking_example_sampler(
+    raw_data = sample_box_data(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,
@@ -565,7 +565,10 @@ def get_mean_activations(
     )
 
     if model.config.architectures[0] == "LlamaForCausalLM":
-        modules = [f"model.layers.{layer}.self_attn.o_proj" for layer in range(model.config.num_hidden_layers)]
+        modules = [
+            f"model.layers.{layer}.self_attn.o_proj"
+            for layer in range(model.config.num_hidden_layers)
+        ]
     else:
         modules = [
             f"base_model.model.model.layers.{layer}.self_attn.o_proj"
@@ -634,17 +637,17 @@ def mean_ablate(
                 and token_pos != last_pos
             ):
                 inputs[bi, token_pos, :] = mean_act[token_pos, :]
-            
+
             elif token_pos == prev_query_box_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[-1][layer]:
                         inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
-            
+
             elif token_pos == last_pos - 2:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[2][layer]:
                         inputs[bi, token_pos, head_idx] = mean_act[token_pos, head_idx]
-            
+
             elif token_pos == last_pos:
                 for head_idx in range(model.config.num_attention_heads):
                     if head_idx not in circuit_components[0][layer]:
