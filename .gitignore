@@ -1,12 +1,10 @@
 llama_7b/
 examples/
 playground.ipynb
-results*/
 logs
 notebooks/figures/
 *.tsv
 *.out
-results/
 *.sh
 results_notebook/
 logic_data/*.pkl

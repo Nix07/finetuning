@@ -1963,6 +1963,34 @@ def get_samples_with_correct_prediction(
     return input_ids, last_token_indices, output_ids
 
 
+def sample_arithmetic_data(tokenizer, num_samples, data_file):
+    """
+    Sample data from the arithmetic data file
+
+    Args:
+        tokenizer: Tokenizer to be used
+        num_samples: Number of samples to be generated
+        data_file: Path to the arithmetic data file
+    """
+
+    with open(data_file, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert num_samples <= len(data["expression"])
+
+    indices = torch.randint(0, len(data["expression"]), (num_samples,))
+    prompts = [data["expression"][idx] for idx in indices]
+    labels = [data["label"][idx] for idx in indices]
+
+    input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
+    last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
+    input_tokens = input_tokens["input_ids"]
+    output_ids = tokenizer(labels, padding=True, return_tensors="pt")["input_ids"]
+    output_ids = output_ids[:, 2]
+
+    return input_tokens, last_token_indices, output_ids
+
+
 def sample_box_data(tokenizer, num_samples, data_file, architecture):
     """
     Sample data from the box data file
@@ -2141,12 +2169,48 @@ def random_samples(
     return input_ids, last_token_indices, output_ids
 
 
+def load_pp_arithemtic_data(
+    tokenizer,
+    num_samples,
+    clean_data_file,
+    corrupt_data_file,
+):
+    """
+    Load data for path patching task consisting of original and counterfactual
+    arithmetic examples.
+
+    Args:
+        tokenizer: Tokenizer to be used
+        num_samples: Number of samples to be generated
+        clean_data_file: Path to the clean data file
+        corrupt_data_file: Path to the corrupt data file
+    """
+    (
+        clean_input_ids,
+        clean_last_token_indices,
+        clean_output_ids,
+    ) = sample_arithmetic_data(tokenizer, num_samples, clean_data_file)
+    (
+        corrupt_input_ids,
+        corrupt_last_token_indices,
+        _,
+    ) = sample_arithmetic_data(tokenizer, num_samples, corrupt_data_file)
+
+    return (
+        clean_input_ids,
+        clean_last_token_indices,
+        corrupt_input_ids,
+        corrupt_last_token_indices,
+        clean_output_ids,
+    )
+
+
 def load_pp_data(
     model,
     tokenizer,
     num_samples,
     data_file,
-    num_ents_or_ops,
+    num_boxes,
     architecture,
 ):
     """
@@ -2167,8 +2231,8 @@ def load_pp_data(
     all_intervention_ids = []
     all_incorrect_output_ids = []
 
-    for i in range(0, num_samples, num_ents_or_ops):
-        for j in range(num_ents_or_ops):
+    for i in range(0, num_samples, num_boxes):
+        for j in range(num_boxes):
             if i + j >= num_samples:
                 break
 
@@ -2177,11 +2241,9 @@ def load_pp_data(
             all_ctf_output_ids += [output_ids[i + j]]
 
             random_source_index = random.choice(
-                list(
-                    range(0, num_samples - ((j + 1) % num_ents_or_ops), num_ents_or_ops)
-                )
+                list(range(0, num_samples - ((j + 1) % num_boxes), num_boxes))
             )
-            random_source_index += (j + 1) % num_ents_or_ops
+            random_source_index += (j + 1) % num_boxes
             source_example = input_ids[random_source_index].clone()
 
             # Change the query box label with a random alphabet

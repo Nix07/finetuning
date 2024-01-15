@@ -21,7 +21,12 @@ from tqdm import tqdm
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
-from data.data_utils import load_pp_data, sample_box_data, get_data_for_mean_ablation
+from data.data_utils import (
+    load_pp_data,
+    load_pp_arithemtic_data,
+    sample_box_data,
+    get_data_for_mean_ablation,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -117,6 +122,45 @@ def get_model_and_tokenizer(model_name: str):
     return model, tokenizer
 
 
+def load_arithmetic_dataloader(
+    tokenizer: LlamaTokenizer,
+    clean_data_file: str,
+    corrupt_data_file: str,
+    num_samples: int,
+    batch_size: int,
+):
+    """
+    Loads the path patching arithmetic dataloader.
+
+    Args:
+        tokenizer: tokenizer to use.
+        clean_data_file: path to the clean datafile.
+        corrupt_data_file: path to the corrupt datafile.
+        num_samples: number of samples to use from the datafile.
+        batch_size: batch size to use for the dataloader.
+    """
+
+    raw_data = load_pp_arithemtic_data(
+        tokenizer=tokenizer,
+        num_samples=num_samples,
+        clean_data_file=clean_data_file,
+        corrupt_data_file=corrupt_data_file,
+    )
+
+    dataset = Dataset.from_dict(
+        {
+            "base_tokens": raw_data[0],
+            "base_last_token_indices": raw_data[1],
+            "source_tokens": raw_data[2],
+            "source_last_token_indices": raw_data[3],
+            "labels": raw_data[4],
+        }
+    ).with_format("numpy")
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    return dataloader
+
+
 def load_dataloader(
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
@@ -141,7 +185,7 @@ def load_dataloader(
         num_samples=num_samples,
         data_file=datafile,
         architecture="LLaMAForCausalLM",
-        num_ents_or_ops=num_boxes,
+        num_boxes=num_boxes,
     )
     base_tokens = raw_data[0]  # Clean inputs
     base_last_token_indices = raw_data[1]  # Clean last token indices
