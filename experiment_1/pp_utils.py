@@ -544,7 +544,7 @@ def get_receiver_layers(
     return receiver_layers
 
 
-def loal_eval_data(
+def load_eval_data(
     tokenizer: LlamaTokenizer, datafile: str, num_samples: int, batch_size: int
 ):
     """
