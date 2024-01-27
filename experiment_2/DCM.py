@@ -21,11 +21,7 @@ from functionality_utils import (
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
-from data.data_utils import (
-    positional_desiderata,
-    object_value_desiderata,
-    box_label_value_desiderata,
-)
+from data.data_utils import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(20)
@@ -37,24 +33,39 @@ relative_pos = {
     "value_fetcher": 0,
 }
 
-desiderata = {
+org_desiderata = {
     "positional": positional_desiderata,
     "object_value": object_value_desiderata,
     "box_label_value": box_label_value_desiderata,
 }
 
+additional_desiderata = {
+    "random_text_start": add_raw_text_at_start,
+    "random_text_end": add_raw_text_at_end,
+    "add_tokens_btw_box_and_obj": additional_token_btw_box_and_object,
+    "add_seg_start": add_segment_at_start,
+    "add_seg_end": add_segment_at_end,
+    "add_box_before_correct_segment": add_box_before_correct_segment,
+    "incorrect_segment": diff_index_query_box,
+    "altered_box_obj_order": box_object_altered_order,
+    "altered_box_obj_association": alter_box_object_association,
+    "no_comma": remove_comma_desiderata,
+    "add_comma": add_comma_after_object,
+}
+
 
 def dcm_main(
     model_name: str = "llama",
-    circuit_path: str = "./experiment_1/results/circuits/llama_circuit.json",
+    circuit_path: str = "../experiment_1/results/circuits/llama_circuit.json",
     batch_size: int = 32,
-    data_file: str = "./data/dataset.jsonl",
-    object_file: str = "./data/objects.jsonl",
+    data_file: str = "../data/dataset.jsonl",
+    object_file: str = "../data/objects.csv",
     epochs: int = 2,
     log_steps: int = 2,
     eval_steps: int = 4,
-    output_dir: str = "./experiment_2/results/DCM/",
+    output_dir: str = "../experiment_2/results/DCM/",
     lambs: list = [0.01],
+    use_add_desiderata: bool = False,
 ):
     """
     Main function for the DCM experiment.
@@ -70,7 +81,13 @@ def dcm_main(
         param.requires_grad_(False)
     print("Model and Tokenizer loaded...\n")
 
+    if use_add_desiderata:
+        desiderata = additional_desiderata.copy()
+    else:
+        desiderata = org_desiderata.copy()
+
     for desid_name, desid_method in desiderata.items():
+        print("Starting with desideratum: ", desid_name)
         desideratum_train, desideratum_eval, desideratum_test = get_data(
             desid_method, tokenizer, data_file, object_file, batch_size
         )
@@ -101,6 +118,9 @@ def dcm_main(
         print("Counterfactual example activations computed...\n")
 
         for head_group_name, head_group in tqdm(head_groups.items()):
+            if use_add_desiderata:
+                if head_group_name != "pos_transmitter":
+                    continue
             print(f"{desid_name}, {head_group_name} training started...")
             modules_w_heads = []
             for l, h in head_group:
@@ -115,7 +135,9 @@ def dcm_main(
 
             mask = {}
             rel_pos = relative_pos[head_group_name]
-            save_path = output_dir + f"{model_name}/{head_group_name}/{desid_name}/"
+            save_path = (
+                output_dir + f"{model_name}_circuit/{head_group_name}/{desid_name}/"
+            )
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
 

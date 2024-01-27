@@ -19,11 +19,7 @@ from functionality_utils import (
 curr_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
-from data.data_utils import (
-    positional_desiderata,
-    object_value_desiderata,
-    box_label_value_desiderata,
-)
+from data.data_utils import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 random.seed(20)
@@ -36,10 +32,24 @@ relative_pos = {
     "value_fetcher": 0,
 }
 
-desiderata_methods = {
+org_desiderata = {
     "positional": positional_desiderata,
     "object_value": object_value_desiderata,
     "box_label_value": box_label_value_desiderata,
+}
+
+additional_desiderata = {
+    "random_text_start": add_raw_text_at_start,
+    "random_text_end": add_raw_text_at_end,
+    "add_tokens_btw_box_and_obj": additional_token_btw_box_and_object,
+    "add_seg_start": add_segment_at_start,
+    "add_seg_end": add_segment_at_end,
+    "add_box_before_correct_segment": add_box_before_correct_segment,
+    "incorrect_segment": diff_index_query_box,
+    "altered_box_obj_order": box_object_altered_order,
+    "altered_box_obj_association": alter_box_object_association,
+    "no_comma": remove_comma_desiderata,
+    "add_comma": add_comma_after_object,
 }
 
 results = defaultdict(str)
@@ -47,12 +57,12 @@ results = defaultdict(str)
 
 def act_patching_main(
     model_name: str = "llama",
-    circuit_name: str = "llama",
-    data_file: str = "./data/dataset.jsonl",
-    object_file: str = "./data/objects.jsonl",
+    data_file: str = "../data/dataset.jsonl",
+    object_file: str = "../data/objects.jsonl",
     num_samples: int = 500,
     batch_size: int = 32,
-    output_dir: str = "./experiment_2/results/activation_patching",
+    output_dir: str = "../experiment_2/results/activation_patching",
+    use_add_desiderata: bool = False,
 ):
     """
     Main function for activation patching experiments.
@@ -70,9 +80,17 @@ def act_patching_main(
     print("Model and Tokenizer loaded")
 
     for head_group, rel_pos in relative_pos.items():
-        for desiderata in ["positional", "object_value", "box_label_value"]:
+        if use_add_desiderata:
+            if head_group != "pos_transmitter":
+                continue
+            desiderata = additional_desiderata.copy()
+        else:
+            desiderata = org_desiderata.copy()
+
+        for desideratum in desiderata.keys():
+            print(f"Head group: {head_group}, Desiderata: {desideratum}")
             with open(
-                f"./experiment_2/results/DCM/{circuit_name}_circuit/{head_group}/{desiderata}/0.01.txt",
+                f"./results/DCM/{model_name}_circuit/{head_group}/{desideratum}/0.01.txt",
                 "r",
                 encoding="utf-8",
             ) as f:
@@ -82,7 +100,7 @@ def act_patching_main(
             patching_heads = {rel_pos: heads}
 
             for loop_idx in tqdm(range(10)):
-                raw_data = desiderata_methods[desiderata](
+                raw_data = desiderata[desideratum](
                     tokenizer=tokenizer,
                     num_samples=num_samples,
                     data_file=data_file,
@@ -110,7 +128,7 @@ def act_patching_main(
                 # Computing the activations of counterfactual examples
                 source_cache = {}
                 for bi, inputs in tqdm(
-                    enumerate(dataloader), desc="counterfactual activations"
+                    enumerate(dataloader), desc="source activations"
                 ):
                     for k, v in inputs.items():
                         if v is not None and isinstance(v, torch.Tensor):
@@ -128,7 +146,9 @@ def act_patching_main(
                             source_cache[bi] = {
                                 module: cache[module].input.detach().cpu()
                             }
-                print("Counterfactual activations computed\n")
+
+                del cache
+                torch.cuda.empty_cache()
 
                 # Applying activation patching from counterfactual examples
                 correct_count, total_count = 0, 0
@@ -167,15 +187,24 @@ def act_patching_main(
 
                 acc = round(correct_count / total_count * 100, 2)
                 print(
-                    f"Head group: {head_group}, Desiderata: {desiderata}, Accuracy: {acc}"
+                    f"Head group: {head_group}, Desiderata: {desideratum}, Accuracy: {acc}"
                 )
 
-                if desiderata in results[model_name][head_group]:
-                    results[model_name][head_group][desiderata].append(acc)
+                if desideratum in results[model_name][head_group]:
+                    results[model_name][head_group][desideratum].append(acc)
                 else:
-                    results[model_name][head_group][desiderata] = [acc]
+                    results[model_name][head_group][desideratum] = [acc]
 
-                save_path = output_dir + f"/{model_name}_circuit_semantic_results.json"
+                if use_add_desiderata:
+                    save_path = (
+                        output_dir
+                        + f"/{model_name}_circuit/{model_name}_add_semantic_results.json"
+                    )
+                else:
+                    save_path = (
+                        output_dir
+                        + f"/{model_name}_circuit/{model_name}_semantic_results.json"
+                    )
                 with open(save_path, "w", encoding="utf-8") as f:
                     json.dump(results, f, indent=4)
 
