@@ -23,7 +23,6 @@ parent_dir = os.path.abspath(os.path.join(curr_dir, os.pardir))
 sys.path.append(parent_dir)
 from data.data_utils import (
     load_pp_data,
-    load_pp_arithemtic_data,
     sample_box_data,
     get_data_for_mean_ablation,
 )
@@ -122,45 +121,6 @@ def get_model_and_tokenizer(model_name: str):
     return model, tokenizer
 
 
-def load_arithmetic_dataloader(
-    tokenizer: LlamaTokenizer,
-    clean_data_file: str,
-    corrupt_data_file: str,
-    num_samples: int,
-    batch_size: int,
-):
-    """
-    Loads the path patching arithmetic dataloader.
-
-    Args:
-        tokenizer: tokenizer to use.
-        clean_data_file: path to the clean datafile.
-        corrupt_data_file: path to the corrupt datafile.
-        num_samples: number of samples to use from the datafile.
-        batch_size: batch size to use for the dataloader.
-    """
-
-    raw_data = load_pp_arithemtic_data(
-        tokenizer=tokenizer,
-        num_samples=num_samples,
-        clean_data_file=clean_data_file,
-        corrupt_data_file=corrupt_data_file,
-    )
-
-    dataset = Dataset.from_dict(
-        {
-            "base_tokens": raw_data[0],
-            "base_last_token_indices": raw_data[1],
-            "source_tokens": raw_data[2],
-            "source_last_token_indices": raw_data[3],
-            "labels": raw_data[4],
-        }
-    ).with_format("numpy")
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-
-    return dataloader
-
-
 def load_dataloader(
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
@@ -256,9 +216,7 @@ def get_caches(
 
             clean_cache[bi] = cache
             for i in range(batch_size):
-                logits = apply_softmax(
-                    output.logits[i, inp["base_last_token_indices"][i]]
-                )
+                logits = apply_softmax(output.logits[i, inp["base_last_token_indices"][i]])
                 clean_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
 
             del output, cache, logits, inp
@@ -284,9 +242,7 @@ def get_caches(
 
             corrupt_cache[bi] = cache
             for i in range(batch_size):
-                logits = apply_softmax(
-                    output.logits[i, inp["source_last_token_indices"][i]]
-                )
+                logits = apply_softmax(output.logits[i, inp["source_last_token_indices"][i]])
                 corrupt_logit_outputs[bi][i] = (logits[inp["labels"][i]]).item()
 
             del output, cache, logits, inp
@@ -380,26 +336,20 @@ def patching_sender_heads(
 
                     # Computing the position from which the output of the sender
                     # head should be patched
-                    sender_head_pos_in_corrupt = (
-                        corrupt_last_token_indices[bi] - rel_pos
-                    )
+                    sender_head_pos_in_corrupt = corrupt_last_token_indices[bi] - rel_pos
 
                 # Patch clean output to all the heads of this layer from the
                 # `sender_head_pos_in_clean` position to last token position,
                 # except the sender head which is patched from the
                 # `sender_head_pos_in_corrupt` position of the corrupt output
-                for pos in range(
-                    sender_head_pos_in_clean, clean_last_token_indices[bi] + 1
-                ):
+                for pos in range(sender_head_pos_in_clean, clean_last_token_indices[bi] + 1):
                     for head_idx in range(model.config.num_attention_heads):
                         if head_idx == sender_head and pos == sender_head_pos_in_clean:
                             input[bi, pos, sender_head] = corrupt_head_outputs[
                                 bi, sender_head_pos_in_corrupt, sender_head
                             ]
                         else:
-                            input[bi, pos, head_idx] = clean_head_outputs[
-                                bi, pos, head_idx
-                            ]
+                            input[bi, pos, head_idx] = clean_head_outputs[bi, pos, head_idx]
 
         else:
             for bi in range(batch_size):
@@ -417,9 +367,7 @@ def patching_sender_heads(
                 # Patch clean output to all the heads of this layer from the
                 # `sender_head_pos_in_clean` position to last token position
                 # since none of them are sender heads
-                for pos in range(
-                    sender_head_pos_in_clean, clean_last_token_indices[bi] + 1
-                ):
+                for pos in range(sender_head_pos_in_clean, clean_last_token_indices[bi] + 1):
                     input[bi, pos] = clean_head_outputs[bi, pos]
 
         input = rearrange(
@@ -497,9 +445,9 @@ def patching_receiver_heads(
 
             # Patch the input of receiver heads (output of k_proj, q_proj, or v_proj)
             # computed in the previous step of path patching
-            output[
+            output[bi, receiver_head_pos_in_clean, receiver_head] = patched_head_outputs[
                 bi, receiver_head_pos_in_clean, receiver_head
-            ] = patched_head_outputs[bi, receiver_head_pos_in_clean, receiver_head]
+            ]
 
     output = rearrange(
         output,
@@ -510,9 +458,7 @@ def patching_receiver_heads(
     return output
 
 
-def get_receiver_layers(
-    model: LlamaForCausalLM, receiver_heads: list, composition: str
-):
+def get_receiver_layers(model: LlamaForCausalLM, receiver_heads: list, composition: str):
     """
     Gets the receiver layers from the receiver heads.
 
@@ -544,9 +490,7 @@ def get_receiver_layers(
     return receiver_layers
 
 
-def load_eval_data(
-    tokenizer: LlamaTokenizer, datafile: str, num_samples: int, batch_size: int
-):
+def load_eval_data(tokenizer: LlamaTokenizer, datafile: str, num_samples: int, batch_size: int):
     """
     Loads the dataset for evaluation.
 
@@ -571,9 +515,7 @@ def load_eval_data(
             "labels": raw_data[2],
         }
     ).with_format("torch")
-    data_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, shuffle=False
-    )
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     return data_loader
 
@@ -610,9 +552,7 @@ def load_ablation_data(
         }
     ).with_format("torch")
 
-    ablate_dataloader = torch.utils.data.DataLoader(
-        ablate_dataset, batch_size=batch_size
-    )
+    ablate_dataloader = torch.utils.data.DataLoader(ablate_dataset, batch_size=batch_size)
     return ablate_dataloader
 
 
@@ -849,19 +789,13 @@ def get_circuit(
     )
 
     path = circuit_root_path + "/pos_transmitter.pt"
-    pos_transmitter_heads = compute_topk_components(
-        torch.load(path), k=n_pos_trans, largest=False
-    )
+    pos_transmitter_heads = compute_topk_components(torch.load(path), k=n_pos_trans, largest=False)
 
     path = circuit_root_path + "/pos_detector.pt"
-    pos_detector_heads = compute_topk_components(
-        torch.load(path), k=n_pos_detect, largest=False
-    )
+    pos_detector_heads = compute_topk_components(torch.load(path), k=n_pos_detect, largest=False)
 
     path = circuit_root_path + "/struct_reader.pt"
-    struct_reader_heads = compute_topk_components(
-        torch.load(path), k=n_struct_read, largest=False
-    )
+    struct_reader_heads = compute_topk_components(torch.load(path), k=n_struct_read, largest=False)
 
     intersection = []
     for head in value_fetcher_heads:
@@ -938,16 +872,12 @@ def get_random_circuit(
     heads_at_last_pos = np.random.choice(
         list(range(num_heads * num_layers)), n_value_fetcher + n_pos_transmitter
     )
-    heads_at_query_box_pos = np.random.choice(
-        list(range(num_heads * num_layers)), n_pos_detector
-    )
+    heads_at_query_box_pos = np.random.choice(list(range(num_heads * num_layers)), n_pos_detector)
     heads_at_prev_query_box_pos = np.random.choice(
         list(range(num_heads * num_layers)), n_struct_reader
     )
 
-    heads_at_last_pos = [
-        [head // num_layers, head % num_heads] for head in heads_at_last_pos
-    ]
+    heads_at_last_pos = [[head // num_layers, head % num_heads] for head in heads_at_last_pos]
     heads_at_query_box_pos = [
         [head // num_layers, head % num_heads] for head in heads_at_query_box_pos
     ]
@@ -1015,9 +945,7 @@ def compute_pair_drop_values(
             if model.config.architectures[0] == "LlamaForCausalLM":
                 layer_2 = f"model.layers.{layer_idx_2}.self_attn.o_proj"
             else:
-                layer_2 = (
-                    f"base_model.model.model.layers.{layer_idx_2}.self_attn.o_proj"
-                )
+                layer_2 = f"base_model.model.model.layers.{layer_idx_2}.self_attn.o_proj"
 
             if greedy_res[(layer_2, head_2)][(layer_1, head_1)] > 0.0:
                 continue
@@ -1076,9 +1004,7 @@ def get_head_significance_score(
         else:
             layer = f"base_model.model.model.layers.{layer_idx}.self_attn.o_proj"
 
-        for r in ranked[str((layer, head))][
-            : math.ceil(percentage * len(ranked.values()))
-        ]:
+        for r in ranked[str((layer, head))][: math.ceil(percentage * len(ranked.values()))]:
             top_layer = r[0].split(",")[0][2:-1]
             top_head = int(r[0].split(",")[1][:-1])
             if r[1] <= 0:
@@ -1094,9 +1020,7 @@ def get_head_significance_score(
         )
         res[(layer, head)] = (before, after)
 
-        for r in ranked[str((layer, head))][
-            : math.ceil(percentage * len(ranked.values()))
-        ]:
+        for r in ranked[str((layer, head))][: math.ceil(percentage * len(ranked.values()))]:
             top_layer = r[0].split(",")[0][2:-1]
             top_head = int(r[0].split(",")[1][:-1])
             if r[1] <= 0:
