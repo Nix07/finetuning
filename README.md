@@ -5,9 +5,9 @@ Our findings suggest that fine-tuning enhances, rather than fundamentally alters
 
 We provide implementations of the two main methods we used to support our findings:
 
-(i) DCM, which automatically detects model components responsible for specific semantics.
+(i) [DCM](experiment_2/DCM.py), which automatically detects model components responsible for specific semantics.
 
-(ii) CMAP, a new approach for patching activations across models to reveal improved mechanisms. 
+(ii) [CMAP](experiment_3/cmap_utils.py), a new approach for patching activations across models to reveal improved mechanisms. 
 
 ## Setup
 
