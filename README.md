@@ -9,6 +9,10 @@ We provide implementations of the two main methods we used to support our findin
 
 (ii) [CMAP](experiment_3/cmap_utils.py), a new approach for patching activations across models to reveal improved mechanisms. 
 
+<p align="center">
+<img src="cmap_vis.png" style="width:80%;"/>
+</p>
+
 ## Setup
 
 To get all the dependencies run:
