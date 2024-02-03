@@ -3,7 +3,7 @@ This repository contains the code used for the experiments in the paper [Fine-Tu
 We study how fine-tuning affects the internal mechanisms implemented in language models. As a case study, we explore the property of entity tracking in Llama-7B, and in its fine-tuned variants - Goat-7B and Vicuna-7B.
 Our findings suggest that fine-tuning enhances, rather than fundamentally alters, the mechanistic operation of the model.
 
-We provide an implementation of the main two methods we used to support our findings:
+We provide implementations of the two main methods we used to support our findings:
 
 (i) DCM, which automatically detects model components responsible for specific semantics.
 
