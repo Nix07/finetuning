@@ -61,8 +61,8 @@ def get_model_and_tokenizer(model_name: str, device: str = "cuda"):
         path = "AlekseyKorshuk/vicuna-7b"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
-    elif model_name == "naive":
-        path = "/data/nikhil_prakash/anima-2.0/naive_ft_model/"
+    elif model_name == "float":
+        path = "nikhil07prakash/float-7b"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
     return model, tokenizer
@@ -303,9 +303,9 @@ def edit_output(
                                 batch, source_prev_box_token_pos, head_start:head_end
                             ]
                         )
-                        inp[
-                            batch, base_prev_box_token_pos, head_start:head_end
-                        ] = intervention
+                        inp[batch, base_prev_box_token_pos, head_start:head_end] = (
+                            intervention
+                        )
 
         from_activations[layer] = from_activations[layer].to("cpu")
 

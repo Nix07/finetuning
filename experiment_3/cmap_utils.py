@@ -59,8 +59,8 @@ def get_model_and_tokenizer(model_name: str, device: str = "cuda"):
         path = "AlekseyKorshuk/vicuna-7b"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
-    elif model_name == "naive":
-        path = "/data/nikhil_prakash/anima-2.0/naive_ft_model/"
+    elif model_name == "float":
+        path = "nikhil07prakash/float-7b"
         model = LlamaForCausalLM.from_pretrained(path).to(device)
 
     return model, tokenizer
