@@ -4,6 +4,10 @@ We study how fine-tuning affects the internal mechanisms implemented in language
 
 Our findings suggest that fine-tuning enhances, rather than fundamentally alters, the mechanistic operation of the model.
 
+<p align="center">
+<img src="circuit_flow.pdf" style="width:80%;"/>
+</p>
+
 ## CMAP
 A new approach for patching activations across models to reveal improved mechanisms.
 Our implementation is based on [baukit/nethook.py](baukit/nethook.py), however, it can easily be adapted to any other patching package.
