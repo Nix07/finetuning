@@ -6,7 +6,7 @@ Our findings suggest that fine-tuning enhances, rather than fundamentally alters
 
 ## CMAP
 A new approach for patching activations across models to reveal improved mechanisms.
-Our implementation is based on [baukit/nethook.py] (baukit/nethook.py), however, it can easily be adapted to any other patching package.
+Our implementation is based on [baukit/nethook.py](baukit/nethook.py), however, it can easily be adapted to any other patching package.
 [experiment_3/cmap.ipynb](experiment_3/cmap.ipynb) demonstrare how to run the full experiment.
 
 <p align="center">
