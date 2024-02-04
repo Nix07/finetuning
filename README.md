@@ -5,7 +5,7 @@ We study how fine-tuning affects the internal mechanisms implemented in language
 Our findings suggest that fine-tuning enhances, rather than fundamentally alters, the mechanistic operation of the model.
 
 <p align="center">
-<img src="circuit_flow.pdf" style="width:80%;"/>
+<img src="circuit_flow.png" style="width:80%;"/>
 </p>
 
 ## CMAP
