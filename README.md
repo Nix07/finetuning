@@ -4,11 +4,11 @@ We study how fine-tuning affects the internal mechanisms implemented in language
 
 Our findings suggest that fine-tuning enhances, rather than fundamentally alters, the mechanistic operation of the model.
 
- ## DCM
-[experiment_2/DCM.py](experiment_2/DCM.py), An automated method for identifying the components of a model responsible for specific semantic properties.
-
 ## CMAP
-[experiment_3/cmap_utils.py](experiment_3/cmap_utils.py), A new approach for patching activations across models to reveal improved mechanisms. 
+A new approach for patching activations across models to reveal improved mechanisms.
+Our implementation is based on [baukit/nethook.py] (baukit/nethook.py), however, it can easily be adapted to any other patching package.
+[experiment_3/cmap.ipynb](experiment_3/cmap.ipynb) demonstrare how to run the full experiment.
+
 <p align="center">
 <img src="cmap_vis.png" style="width:80%;"/>
 </p>
