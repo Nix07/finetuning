@@ -26,6 +26,7 @@ Moreover, in order to uncover the reason behind the performance enhancement in f
 
 To get all the dependencies run:
 ```bash
-conda env create -f environment.yaml
+conda env create -f environment.yml
+conda activate finetuning
 ```
 ## How to cite
