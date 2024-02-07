@@ -62,6 +62,7 @@ def act_patching_main(
     num_samples: int = 500,
     batch_size: int = 32,
     output_dir: str = "../experiment_2/results/activation_patching",
+    circuit_name: str = "llama_circuit",
     use_add_desiderata: bool = False,
 ):
     """
@@ -90,7 +91,7 @@ def act_patching_main(
         for desideratum in desiderata.keys():
             print(f"Head group: {head_group}, Desiderata: {desideratum}")
             with open(
-                f"./results/DCM/{model_name}_circuit/{head_group}/{desideratum}/0.01.txt",
+                f"./results/DCM/{circuit_name}/{head_group}/{desideratum}/0.01.txt",
                 "r",
                 encoding="utf-8",
             ) as f:
@@ -198,12 +199,12 @@ def act_patching_main(
                 if use_add_desiderata:
                     save_path = (
                         output_dir
-                        + f"/{model_name}_circuit/{model_name}_add_semantic_results.json"
+                        + f"/{circuit_name}/{model_name}_add_semantic_results.json"
                     )
                 else:
                     save_path = (
                         output_dir
-                        + f"/{model_name}_circuit/{model_name}_semantic_results.json"
+                        + f"/{circuit_name}/{model_name}_semantic_results.json"
                     )
                 with open(save_path, "w", encoding="utf-8") as f:
                     json.dump(results, f, indent=4)
