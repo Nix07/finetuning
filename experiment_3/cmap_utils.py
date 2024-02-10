@@ -102,7 +102,6 @@ def load_data(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=data_file,
-        architecture="LLaMAForCausalLM",
     )
 
     dataset = Dataset.from_dict(

@@ -144,7 +144,6 @@ def load_dataloader(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,
-        architecture="LLaMAForCausalLM",
         num_boxes=num_boxes,
     )
     base_tokens = raw_data[0]  # Clean inputs
@@ -522,7 +521,6 @@ def load_eval_data(
         tokenizer=tokenizer,
         num_samples=num_samples,
         data_file=datafile,
-        architecture="LlamaForCausalLM",
     )
     dataset = Dataset.from_dict(
         {

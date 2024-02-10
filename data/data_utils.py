@@ -1285,7 +1285,7 @@ def positional_desiderata(
     )
 
 
-def sample_box_data(tokenizer, num_samples, data_file, architecture):
+def sample_box_data(tokenizer, num_samples, data_file):
     """
     Sample data from the box data file
 
@@ -1307,18 +1307,7 @@ def sample_box_data(tokenizer, num_samples, data_file, architecture):
         prompt = " ".join(data[i]["sentence"].split(" ")[:-1])
         prompts.append(prompt)
 
-        # 0th index will be BOS token for llama-like tokenizer
-        if architecture in [
-            "AlignableLlamaForCausalLM",
-            "LLaMAForCausalLM",
-            "LlamaForCausalLM",
-            "LlaMAForCausalLM",
-        ]:
-            labels.append(tokenizer.encode(label)[1])
-        elif architecture == "GPT2LMHeadModel":
-            labels.append(tokenizer.encode(label)[0])
-        else:
-            raise ValueError(f"Unknown architecture {architecture}")
+        labels.append(tokenizer.encode(label)[1])
 
     input_tokens = tokenizer(prompts, padding=True, return_tensors="pt")
     last_token_indices = input_tokens["attention_mask"].sum(dim=1) - 1
@@ -1343,7 +1332,7 @@ def load_pp_data(
         input_ids,
         last_token_indices,
         output_ids,
-    ) = sample_box_data(tokenizer, num_samples, data_file, architecture)
+    ) = sample_box_data(tokenizer, num_samples, data_file)
 
     all_base_input_ids = []
     all_base_input_last_pos = []
