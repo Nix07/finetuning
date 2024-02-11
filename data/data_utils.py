@@ -1293,7 +1293,6 @@ def sample_box_data(tokenizer, num_samples, data_file):
         tokenizer: Tokenizer to be used
         num_samples: Number of samples to be generated
         data_file: Path to the box data file
-        architecture: Model architecture
     """
 
     with open(data_file, encoding="utf-8") as f:
