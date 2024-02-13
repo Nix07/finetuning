@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from pp_utils import (
     get_model_and_tokenizer,
-    loal_eval_data,
+    load_eval_data,
     get_mean_activations,
     get_circuit,
     compute_pair_drop_values,
@@ -41,7 +41,7 @@ def set_seed(seed):
 
 def minimality_main(
     datafile: str = "./data/dataset.jsonl",
-    circuit_root_path: str = "./experiment_1/results/path_patching/llama_circuit",
+    circuit_root_path: str = "../experiment_1/results/path_patching/llama_circuit",
     num_boxes: int = 7,
     model_name: str = "llama",
     num_samples: int = 100,
@@ -53,7 +53,7 @@ def minimality_main(
     percentage: float = 0.3,
     minimality_threshold: float = 0.01,
     seed: int = 10,  # Goat circuit: 56, Llama circuit: 10
-    results_path: str = "./experiment_1/results/minimality/llama_circuit",
+    results_path: str = "../experiment_1/results/minimality/llama_circuit",
 ):
     """
     Computes the minimality scores for the heads in the model

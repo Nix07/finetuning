@@ -961,7 +961,7 @@ def compute_pair_drop_values(
 
     greedy_res = defaultdict(lambda: defaultdict(float))
 
-    for layer_idx_1, head_1 in tqdm(heads):
+    for layer_idx_1, head_1 in tqdm(heads, total=len(heads), desc="Pair drop values"):
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer_1 = f"model.layers.{layer_idx_1}.self_attn.o_proj"
         else:
@@ -1028,7 +1028,9 @@ def get_head_significance_score(
 
     res = {}
 
-    for layer_idx, head in tqdm(heads):
+    for layer_idx, head in tqdm(
+        heads, total=len(heads), desc="Head significance score"
+    ):
         if model.config.architectures[0] == "LlamaForCausalLM":
             layer = f"model.layers.{layer_idx}.self_attn.o_proj"
         else:
