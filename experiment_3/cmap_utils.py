@@ -290,21 +290,21 @@ def cmap_out(
     outputs: torch.Tensor = None,
     layer: str = None,
     model: LlamaForCausalLM = None,
-    goat_cache: dict = None,
+    finetuned_cache: dict = None,
     bi: int = None,
     pos_heads_dict: dict = None,
     input_tokens: dict = None,
 ):
     """
     Patches the output of attention heads defined in `pos_heads_dict` with its output
-    in the Goat model.
+    in the Finetuned model.
 
     Args:
         inputs (tuple, optional): Inputs to the layer. Defaults to None.
         outputs (torch.Tensor, optional): Outputs of the layer. Defaults to None.
         layer (str, optional): Layer name. Defaults to None.
         model (LlamaForCausalLM, optional): The model to patch. Defaults to None.
-        goat_cache (dict, optional): The cache of the goat model. Defaults to None.
+        finetuned_cache (dict, optional): The cache of the fine-tuned model. Defaults to None.
         bi (int, optional): Batch index. Defaults to None.
         pos_heads_dict (dict, optional): Dictionary of relative positions and heads. Defaults to None.
         input_tokens (dict, optional): Dictionary of input tokens. Defaults to None.
@@ -314,8 +314,8 @@ def cmap_out(
         inputs = inputs[0]
 
     if "o_proj" in layer:
-        g_cache = rearrange(
-            goat_cache[bi][layer],
+        ft_cache = rearrange(
+            finetuned_cache[bi][layer],
             "batch seq_len (n_heads d_head) -> batch seq_len n_heads d_head",
             n_heads=model.config.num_attention_heads,
         )
@@ -336,14 +336,14 @@ def cmap_out(
                         input_tokens["last_token_indices"][batch],
                     )
                     for head in curr_layer_heads:
-                        inputs[batch, prev_query_box_pos, head] = g_cache[
+                        inputs[batch, prev_query_box_pos, head] = ft_cache[
                             batch, prev_query_box_pos, head
                         ]
 
             else:
                 pos = input_tokens["input_ids"].size(1) - rel_pos - 1
                 for head in curr_layer_heads:
-                    inputs[:, pos, head] = g_cache[:, pos, head]
+                    inputs[:, pos, head] = ft_cache[:, pos, head]
 
         inputs = rearrange(
             inputs,
