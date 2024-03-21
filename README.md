@@ -34,12 +34,11 @@ conda activate finetuning
 
 ## How to Cite
 ```bibtex
-@misc{prakash2024finetuning,
-    title={Fine-Tuning Enhances Existing Mechanisms: A Case Study on Entity Tracking}, 
-    author={Nikhil Prakash and Tamar Rott Shaham and Tal Haklay and Yonatan Belinkov and David Bau},
-    year={2024},
-    eprint={2402.14811},
-    archivePrefix={arXiv},
-    primaryClass={cs.CL}
+@inproceedings{prakash2023fine,
+  title={Fine-Tuning Enhances Existing Mechanisms: A Case Study on Entity Tracking},
+  author={Prakash, Nikhil and Shaham, Tamar Rott and Haklay, Tal and Belinkov, Yonatan and Bau, David},
+  booktitle={Proceedings of the 2024 International Conference on Learning Representations},
+  note={arXiv:2402.14811},
+  year={2024}
 }
 ```
